@@ -32,7 +32,7 @@ def prepare_kaggle_dataset(source_base_dir="./"):
             break
     
     # 目標數據路徑
-    target_base = "kaggle_cats_vs_dogs_f"
+    target_base = "file/kaggle_cats_vs_dogs_f"
     
     # 創建目標目錄結構
     os.makedirs(f"{target_base}/train/cat", exist_ok=True)
@@ -199,7 +199,7 @@ def main():
     prepare_kaggle_dataset(source_dir)
     
     # 驗證結構
-    target_base = "kaggle_cats_vs_dogs_f"
+    target_base = "file/kaggle_cats_vs_dogs_f"
     if verify_dataset_structure(target_base):
         print("\n✓ 數據集準備完成！")
     else:
