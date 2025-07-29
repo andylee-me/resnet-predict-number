@@ -49,17 +49,43 @@ jobs:
         chmod 600 ~/.kaggle/kaggle.json
         
         # 下載並解壓數據集
+        echo "正在下載數據集..."
         kaggle datasets download -d salader/dogs-vs-cats
-        unzip -q dogs-vs-cats.zip -d ./
         
-        # 創建所需的目錄結構
+        echo "正在解壓數據集..."
+        unzip -q dogs-vs-cats.zip -d ./temp_dataset/
+        
+        # 檢查下載的內容
+        echo "檢查下載的文件："
+        ls -la ./temp_dataset/
+        find ./temp_dataset/ -type f -name "*.zip" | head -5
+        
+        # 如果有額外的 zip 文件，繼續解壓
+        if [ -f "./temp_dataset/train.zip" ]; then
+          echo "找到 train.zip，正在解壓..."
+          unzip -q ./temp_dataset/train.zip -d ./temp_dataset/
+        fi
+        
+        if [ -f "./temp_dataset/test1.zip" ]; then
+          echo "找到 test1.zip，正在解壓..."
+          unzip -q ./temp_dataset/test1.zip -d ./temp_dataset/
+        fi
+        
+        # 再次檢查結構
+        echo "解壓後的文件結構："
+        find ./temp_dataset/ -type d | head -10
+        find ./temp_dataset/ -name "*.jpg" | head -5
+        
+        # 創建目標目錄結構
         mkdir -p kaggle_cats_vs_dogs_f/train/cat
         mkdir -p kaggle_cats_vs_dogs_f/train/dog  
         mkdir -p kaggle_cats_vs_dogs_f/val/cat
         mkdir -p kaggle_cats_vs_dogs_f/val/dog
         
-        # 移動和分割數據
-        python scripts/prepare_dataset.py
+        # 運行數據準備腳本
+        echo "正在整理數據集..."
+        python scripts/prepare_dataset.py ./temp_dataset/
+        
       if: env.KAGGLE_USERNAME != '' && env.KAGGLE_KEY != ''
         
     # 選項2: 從 Google Drive 下載數據集 (備用選項)
