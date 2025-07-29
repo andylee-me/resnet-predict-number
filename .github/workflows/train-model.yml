@@ -101,17 +101,17 @@ jobs:
     - name: Verify dataset structure
       run: |
         echo "檢查數據集結構..."
-        ls -la kaggle_cats_vs_dogs_f/
+        ls -la file/kaggle_cats_vs_dogs_f/
         echo "訓練集:"
-        ls -la kaggle_cats_vs_dogs_f/train/
+        ls -la file/kaggle_cats_vs_dogs_f/train/
         echo "驗證集:"
-        ls -la kaggle_cats_vs_dogs_f/val/
+        ls -la file/kaggle_cats_vs_dogs_f/val/
         
         # 計算文件數量
-        echo "訓練集貓咪圖片數量: $(find kaggle_cats_vs_dogs_f/train/cat -name "*.jpg" | wc -l)"
-        echo "訓練集狗狗圖片數量: $(find kaggle_cats_vs_dogs_f/train/dog -name "*.jpg" | wc -l)"
-        echo "驗證集貓咪圖片數量: $(find kaggle_cats_vs_dogs_f/val/cat -name "*.jpg" | wc -l)"
-        echo "驗證集狗狗圖片數量: $(find kaggle_cats_vs_dogs_f/val/dog -name "*.jpg" | wc -l)"
+        echo "訓練集貓咪圖片數量: $(find file/kaggle_cats_vs_dogs_f/train/cat -name "*.jpg" | wc -l)"
+        echo "訓練集狗狗圖片數量: $(find file/kaggle_cats_vs_dogs_f/train/dog -name "*.jpg" | wc -l)"
+        echo "驗證集貓咪圖片數量: $(find file/kaggle_cats_vs_dogs_f/val/cat -name "*.jpg" | wc -l)"
+        echo "驗證集狗狗圖片數量: $(find file/kaggle_cats_vs_dogs_f/val/dog -name "*.jpg" | wc -l)"
         
     - name: Train model
       run: |
@@ -125,8 +125,8 @@ jobs:
         mkdir -p test_images
         
         # 複製一些驗證圖片用於測試
-        cp kaggle_cats_vs_dogs_f/val/cat/*.jpg test_images/ 2>/dev/null || true
-        cp kaggle_cats_vs_dogs_f/val/dog/*.jpg test_images/ 2>/dev/null || true
+        cp file/kaggle_cats_vs_dogs_f/val/cat/*.jpg test_images/ 2>/dev/null || true
+        cp file/kaggle_cats_vs_dogs_f/val/dog/*.jpg test_images/ 2>/dev/null || true
         
         # 進行批次預測測試
         python predict.py --model best_cat_dog_model.pth --folder test_images/
