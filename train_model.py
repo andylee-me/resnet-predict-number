@@ -223,7 +223,7 @@ class CatDogClassifier:
 
 def main():
     # 設置數據路徑
-    data_dir = 'kaggle_cats_vs_dogs_f'  # 你的數據集路徑
+    data_dir = 'file/kaggle_cats_vs_dogs_f'  # 你的數據集路徑
     
     # 檢查數據路徑是否存在
     if not os.path.exists(data_dir):
