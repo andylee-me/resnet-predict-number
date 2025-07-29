@@ -91,11 +91,12 @@ jobs:
     # 選項2: 從 Google Drive 下載數據集 (備用選項)
     - name: Download dataset from Google Drive
       run: |
-        # 請替換 FILE_ID 為你的 Google Drive 文件 ID
-        gdown https://drive.google.com/uc?id=19QvyV00Zq6dwRY3hA8z_PyHB-naUUMB7
+        echo "從 Google Drive 下載數據集..."
+        gdown https://drive.google.com/uc?id=19QvyV00Zq6dwRY3hA8z_PyHB-naUUMB7 -O dataset.zip
         unzip dataset.zip -d file/
-        echo "如果需要從 Google Drive 下載，請取消註釋並設置正確的文件 ID"
+        echo "✅ 解壓完成，資料放在 file/ 資料夾內"
       if: env.KAGGLE_USERNAME == '' || env.KAGGLE_KEY == ''
+
         
     - name: Verify dataset structure
       run: |
