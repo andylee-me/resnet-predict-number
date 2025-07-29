@@ -1,0 +1,50 @@
+name: Run Prediction Only
+
+on:
+  workflow_dispatch:  # ✅ 手動執行
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  run-predict:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          environment-file: environment.yml
+          activate-environment: catdog-env
+          auto-activate-base: false
+
+      - name: Download trained model
+        uses: actions/download-artifact@v4
+        with:
+          name: catdog-model
+          path: model/
+
+      - name: Download dataset
+        run: |
+          pip install gdown
+          gdown https://drive.google.com/uc?id=19QvyV00Zq6dwRY3hA8z_PyHB-naUUMB7 -O dataset.zip
+          unzip dataset.zip -d file/
+
+      - name: Run Prediction
+        shell: bash -l {0}
+        run: |
+          conda activate catdog-env
+          python cat_dog_classifier/predict.py
+
+      - name: Archive misclassified images
+        run: zip -r misclassified.zip misclassified/
+
+      - name: Upload misclassified images
+        uses: actions/upload-artifact@v4
+        with:
+          name: misclassified-images
+          path: misclassified.zip
