@@ -16,12 +16,12 @@ jobs:
       uses: actions/checkout@v4
       
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.9'
         
     - name: Cache pip dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
@@ -124,7 +124,7 @@ jobs:
         "
         
     - name: Upload trained model
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: trained-cat-dog-model
         path: |
@@ -133,7 +133,7 @@ jobs:
         retention-days: 30
         
     - name: Upload training logs
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: training-logs
@@ -152,19 +152,19 @@ jobs:
       uses: actions/checkout@v4
       
     - name: Download trained model
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: trained-cat-dog-model
         path: ./models/
         
     - name: Create release
       if: success()
-      uses: actions/create-release@v1
+      uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: model-v${{ github.run_number }}
-        release_name: Cat-Dog Classifier Model v${{ github.run_number }}
+        name: Cat-Dog Classifier Model v${{ github.run_number }}
         body: |
           🐱🐶 自動訓練的貓狗分類器模型
           
@@ -177,5 +177,8 @@ jobs:
           ```bash
           python predict.py --model best_cat_dog_model.pth --image your_image.jpg
           ```
+        files: |
+          ./models/best_cat_dog_model.pth
+          ./models/training_curves.png
         draft: false
         prerelease: false
