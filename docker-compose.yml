@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  cat-dog-trainer:
+    build: .
+    container_name: cat-dog-classifier
+    volumes:
+      # 掛載數據集 (如果你有本地數據集)
+      - ./kaggle_cats_vs_dogs_f:/app/kaggle_cats_vs_dogs_f
+      # 掛載輸出目錄
+      - ./models:/app/models
+      # 掛載腳本 (方便開發時修改)
+      - ./train_model.py:/app/train_model.py
+      - ./predict.py:/app/predict.py
+    environment:
+      - KAGGLE_USERNAME=${KAGGLE_USERNAME}
+      - KAGGLE_KEY=${KAGGLE_KEY}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}
+    # GPU 支持 (如果有 NVIDIA GPU)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    command: python train_model.py
+    
+  # 預測服務
+  predictor:
+    build: .
+    container_name: cat-dog-predictor
+    volumes:
+      - ./models:/app/models
+      - ./test_images:/app/test_images
+      - ./predict.py:/app/predict.py
+    depends_on:
+      - cat-dog-trainer
+    command: python predict.py --model best_cat_dog_model.pth --folder test_images
+    profiles:
+      - predict
+    
+  # Jupyter Notebook 開發環境
+  notebook:
+    build: .
+    container_name: cat-dog-notebook
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./:/app
+      - ./notebooks:/app/notebooks
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+    command: jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token='' --NotebookApp.password=''
+    profiles:
+      - development
