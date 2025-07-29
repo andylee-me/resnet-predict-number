@@ -130,6 +130,20 @@ jobs:
         
         # 進行批次預測測試
         python predict.py --model best_cat_dog_model.pth --folder test_images/
+
+
+    - name: Test model's train predictions
+      run: |
+        echo "測試模型預測..."
+        # 創建測試圖片目錄
+        mkdir -p test_images
+        
+        # 複製一些驗證圖片用於測試
+        cp file/kaggle_cats_vs_dogs_f/train/cat/*.jpg test_images/ 2>/dev/null || true
+        cp file/kaggle_cats_vs_dogs_f/train/dog/*.jpg test_images/ 2>/dev/null || true
+        
+        # 進行批次預測測試
+        python predict_train.py --model best_cat_dog_model.pth --folder test_images/
         
     - name: Generate model summary
       run: |
