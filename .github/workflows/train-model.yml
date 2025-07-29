@@ -1,0 +1,181 @@
+name: Train Cat-Dog Classifier
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # 允許手動觸發
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Install additional tools
+      run: |
+        pip install kaggle gdown
+        
+    # 選項1: 從 Kaggle 下載數據集
+    - name: Download dataset from Kaggle
+      env:
+        KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+        KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+      run: |
+        # 創建 Kaggle 配置目錄
+        mkdir -p ~/.kaggle
+        echo '{"username":"'$KAGGLE_USERNAME'","key":"'$KAGGLE_KEY'"}' > ~/.kaggle/kaggle.json
+        chmod 600 ~/.kaggle/kaggle.json
+        
+        # 下載並解壓數據集
+        kaggle datasets download -d salader/dogs-vs-cats
+        unzip -q dogs-vs-cats.zip -d ./
+        
+        # 創建所需的目錄結構
+        mkdir -p kaggle_cats_vs_dogs_f/train/cat
+        mkdir -p kaggle_cats_vs_dogs_f/train/dog  
+        mkdir -p kaggle_cats_vs_dogs_f/val/cat
+        mkdir -p kaggle_cats_vs_dogs_f/val/dog
+        
+        # 移動和分割數據
+        python scripts/prepare_dataset.py
+      if: env.KAGGLE_USERNAME != '' && env.KAGGLE_KEY != ''
+        
+    # 選項2: 從 Google Drive 下載數據集 (備用選項)
+    - name: Download dataset from Google Drive
+      run: |
+        # 請替換 FILE_ID 為你的 Google Drive 文件 ID
+        # gdown https://drive.google.com/uc?id=19QvyV00Zq6dwRY3hA8z_PyHB-naUUMB7
+        # unzip -q dataset.zip -d ./
+        echo "如果需要從 Google Drive 下載，請取消註釋並設置正確的文件 ID"
+      if: env.KAGGLE_USERNAME == '' || env.KAGGLE_KEY == ''
+        
+    - name: Verify dataset structure
+      run: |
+        echo "檢查數據集結構..."
+        ls -la kaggle_cats_vs_dogs_f/
+        echo "訓練集:"
+        ls -la kaggle_cats_vs_dogs_f/train/
+        echo "驗證集:"
+        ls -la kaggle_cats_vs_dogs_f/val/
+        
+        # 計算文件數量
+        echo "訓練集貓咪圖片數量: $(find kaggle_cats_vs_dogs_f/train/cat -name "*.jpg" | wc -l)"
+        echo "訓練集狗狗圖片數量: $(find kaggle_cats_vs_dogs_f/train/dog -name "*.jpg" | wc -l)"
+        echo "驗證集貓咪圖片數量: $(find kaggle_cats_vs_dogs_f/val/cat -name "*.jpg" | wc -l)"
+        echo "驗證集狗狗圖片數量: $(find kaggle_cats_vs_dogs_f/val/dog -name "*.jpg" | wc -l)"
+        
+    - name: Train model
+      run: |
+        echo "開始訓練模型..."
+        python train_model.py
+        
+    - name: Test model predictions
+      run: |
+        echo "測試模型預測..."
+        # 創建測試圖片目錄
+        mkdir -p test_images
+        
+        # 複製一些驗證圖片用於測試
+        cp kaggle_cats_vs_dogs_f/val/cat/*.jpg test_images/ 2>/dev/null || true
+        cp kaggle_cats_vs_dogs_f/val/dog/*.jpg test_images/ 2>/dev/null || true
+        
+        # 進行批次預測測試
+        python predict.py --model best_cat_dog_model.pth --folder test_images/
+        
+    - name: Generate model summary
+      run: |
+        echo "生成模型摘要..."
+        python -c "
+        import torch
+        import os
+        
+        if os.path.exists('best_cat_dog_model.pth'):
+            checkpoint = torch.load('best_cat_dog_model.pth', map_location='cpu')
+            print(f'模型類別: {checkpoint[\"class_names\"]}')
+            print(f'模型架構: {checkpoint[\"model_architecture\"]}')
+            
+            # 計算模型大小
+            model_size = os.path.getsize('best_cat_dog_model.pth') / (1024*1024)
+            print(f'模型大小: {model_size:.2f} MB')
+        else:
+            print('未找到訓練好的模型文件')
+        "
+        
+    - name: Upload trained model
+      uses: actions/upload-artifact@v3
+      with:
+        name: trained-cat-dog-model
+        path: |
+          best_cat_dog_model.pth
+          training_curves.png
+        retention-days: 30
+        
+    - name: Upload training logs
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: training-logs
+        path: |
+          *.log
+          *.txt
+        retention-days: 7
+
+  deploy:
+    needs: train
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Download trained model
+      uses: actions/download-artifact@v3
+      with:
+        name: trained-cat-dog-model
+        path: ./models/
+        
+    - name: Create release
+      if: success()
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: model-v${{ github.run_number }}
+        release_name: Cat-Dog Classifier Model v${{ github.run_number }}
+        body: |
+          🐱🐶 自動訓練的貓狗分類器模型
+          
+          **訓練信息:**
+          - 模型架構: ResNet18
+          - 訓練時間: ${{ github.run_started_at }}
+          - Commit: ${{ github.sha }}
+          
+          **使用方法:**
+          ```bash
+          python predict.py --model best_cat_dog_model.pth --image your_image.jpg
+          ```
+        draft: false
+        prerelease: false
