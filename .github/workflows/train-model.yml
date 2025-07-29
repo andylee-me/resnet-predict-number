@@ -93,7 +93,7 @@ jobs:
       run: |
         # 請替換 FILE_ID 為你的 Google Drive 文件 ID
         gdown https://drive.google.com/uc?id=19QvyV00Zq6dwRY3hA8z_PyHB-naUUMB7
-        unzip -q dataset.zip -d ./
+        unzip dataset.zip -d file/
         echo "如果需要從 Google Drive 下載，請取消註釋並設置正確的文件 ID"
       if: env.KAGGLE_USERNAME == '' || env.KAGGLE_KEY == ''
         
