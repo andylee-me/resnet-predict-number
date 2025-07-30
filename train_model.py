@@ -1,31 +1,36 @@
+#!/usr/bin/env python3
+"""
+專門用於達到100%訓練準確率的訓練腳本
+通過使用更大模型、更小學習率、更多訓練輪數來實現完全過擬合
+"""
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import torchvision
 from torchvision import datasets, transforms, models
+import argparse
 import os
 import time
 import copy
-from PIL import Image
 import matplotlib.pyplot as plt
 import numpy as np
 
-class CatDogClassifier:
-    def __init__(self, data_dir, batch_size=32, learning_rate=0.001, num_epochs=25):
+class OverfitTrainer:
+    def __init__(self, data_dir, target_accuracy=1.0):
         self.data_dir = data_dir
-        self.batch_size = batch_size
-        self.learning_rate = learning_rate
-        self.num_epochs = num_epochs
+        self.target_accuracy = target_accuracy
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         
-        # 數據預處理
+        print(f"🎯 目標訓練準確率: {target_accuracy*100:.1f}%")
+        print(f"🔧 使用設備: {self.device}")
+        
+        # 針對過擬合的數據變換（減少隨機性）
         self.data_transforms = {
             'train': transforms.Compose([
-                transforms.RandomResizedCrop(224),
-                transforms.RandomHorizontalFlip(),
-                transforms.RandomRotation(10),
-                transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+                transforms.Resize(256),
+                transforms.CenterCrop(224),  # 使用中心裁剪而非隨機裁剪
                 transforms.ToTensor(),
                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ]),
@@ -38,56 +43,69 @@ class CatDogClassifier:
         }
         
         self.model = None
-        self.criterion = nn.CrossEntropyLoss()
         self.optimizer = None
+        self.criterion = nn.CrossEntropyLoss()
         self.dataloaders = {}
         self.dataset_sizes = {}
         self.class_names = []
         
     def load_data(self):
-        """加載和預處理數據"""
-        print("正在加載數據...")
+        """加載數據"""
+        print("📂 正在加載數據...")
         
-        # 創建數據集
         image_datasets = {x: datasets.ImageFolder(os.path.join(self.data_dir, x),
                                                 self.data_transforms[x])
                          for x in ['train', 'val']}
         
-        # 創建數據加載器
-        self.dataloaders = {x: DataLoader(image_datasets[x], batch_size=self.batch_size,
-                                        shuffle=True, num_workers=4)
+        # 使用較小的batch size以獲得更精確的梯度
+        self.dataloaders = {x: DataLoader(image_datasets[x], batch_size=8,
+                                        shuffle=(x == 'train'), num_workers=4)
                           for x in ['train', 'val']}
         
         self.dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val']}
         self.class_names = image_datasets['train'].classes
         
-        print(f"訓練集大小: {self.dataset_sizes['train']}")
-        print(f"驗證集大小: {self.dataset_sizes['val']}")
-        print(f"類別: {self.class_names}")
+        print(f"✅ 訓練集大小: {self.dataset_sizes['train']}")
+        print(f"✅ 驗證集大小: {self.dataset_sizes['val']}")
+        print(f"✅ 類別: {self.class_names}")
         
-    def build_model(self):
-        """構建模型（使用預訓練的ResNet18）"""
-        print("正在構建模型...")
+    def build_model(self, architecture='resnet50'):
+        """構建更大容量的模型"""
+        print(f"🏗️ 正在構建模型: {architecture}")
         
-        # 加載預訓練的ResNet18
-        self.model = models.resnet18(pretrained=True)
+        if architecture == 'resnet50':
+            self.model = models.resnet50(pretrained=True)
+            num_ftrs = self.model.fc.in_features
+            self.model.fc = nn.Linear(num_ftrs, 2)
+        elif architecture == 'resnet101':
+            self.model = models.resnet101(pretrained=True)
+            num_ftrs = self.model.fc.in_features
+            self.model.fc = nn.Linear(num_ftrs, 2)
+        elif architecture == 'resnet34':
+            self.model = models.resnet34(pretrained=True)
+            num_ftrs = self.model.fc.in_features
+            self.model.fc = nn.Linear(num_ftrs, 2)
+        else:  # resnet18
+            self.model = models.resnet18(pretrained=True)
+            num_ftrs = self.model.fc.in_features
+            self.model.fc = nn.Linear(num_ftrs, 2)
         
-        # 凍結特徵提取層
+        # 解凍所有層進行訓練（不凍結任何層）
         for param in self.model.parameters():
-            param.requires_grad = False
-        
-        # 替換最後的全連接層
-        num_ftrs = self.model.fc.in_features
-        self.model.fc = nn.Linear(num_ftrs, 2)  # 2個類別：貓和狗
+            param.requires_grad = True
         
         self.model = self.model.to(self.device)
         
-        # 只優化最後一層的參數
-        self.optimizer = optim.Adam(self.model.fc.parameters(), lr=self.learning_rate)
+        # 使用非常小的學習率以實現精確擬合
+        self.optimizer = optim.Adam(self.model.parameters(), lr=0.00001, weight_decay=0.0)
         
-    def train_model(self):
-        """訓練模型"""
-        print("開始訓練...")
+        print(f"✅ 模型已構建，所有層均可訓練")
+        
+    def train_to_perfection(self, max_epochs=200):
+        """訓練直到達到目標準確率"""
+        print(f"🚀 開始訓練到 {self.target_accuracy*100:.1f}% 準確率...")
+        print(f"🔄 最大訓練輪數: {max_epochs}")
+        print("=" * 60)
         
         since = time.time()
         best_model_wts = copy.deepcopy(self.model.state_dict())
@@ -98,16 +116,22 @@ class CatDogClassifier:
         train_accuracies = []
         val_accuracies = []
         
-        for epoch in range(self.num_epochs):
-            print(f'Epoch {epoch}/{self.num_epochs - 1}')
-            print('-' * 10)
+        epochs_without_improvement = 0
+        max_patience = 30
+        
+        for epoch in range(max_epochs):
+            print(f'Epoch {epoch+1}/{max_epochs}')
+            print('-' * 40)
             
             # 每個epoch都有訓練和驗證階段
+            epoch_train_acc = 0.0
+            epoch_val_acc = 0.0
+            
             for phase in ['train', 'val']:
                 if phase == 'train':
-                    self.model.train()  # 設置模型為訓練模式
+                    self.model.train()
                 else:
-                    self.model.eval()   # 設置模型為評估模式
+                    self.model.eval()
                 
                 running_loss = 0.0
                 running_corrects = 0
@@ -117,41 +141,53 @@ class CatDogClassifier:
                     inputs = inputs.to(self.device)
                     labels = labels.to(self.device)
                     
-                    # 零梯度
                     self.optimizer.zero_grad()
                     
-                    # 前向傳播
                     with torch.set_grad_enabled(phase == 'train'):
                         outputs = self.model(inputs)
                         _, preds = torch.max(outputs, 1)
                         loss = self.criterion(outputs, labels)
                         
-                        # 反向傳播和優化（僅在訓練階段）
                         if phase == 'train':
                             loss.backward()
                             self.optimizer.step()
                     
-                    # 統計
                     running_loss += loss.item() * inputs.size(0)
                     running_corrects += torch.sum(preds == labels.data)
                 
                 epoch_loss = running_loss / self.dataset_sizes[phase]
                 epoch_acc = running_corrects.double() / self.dataset_sizes[phase]
                 
-                print(f'{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
+                print(f'{phase} Loss: {epoch_loss:.6f} Acc: {epoch_acc:.4f} ({epoch_acc*100:.2f}%)')
                 
-                # 記錄損失和準確率
                 if phase == 'train':
                     train_losses.append(epoch_loss)
                     train_accuracies.append(epoch_acc.cpu().numpy())
+                    epoch_train_acc = epoch_acc
                 else:
                     val_losses.append(epoch_loss)
                     val_accuracies.append(epoch_acc.cpu().numpy())
+                    epoch_val_acc = epoch_acc
                 
-                # 深拷貝模型（如果是最佳模型）
+                # 保存最佳模型
                 if phase == 'val' and epoch_acc > best_acc:
                     best_acc = epoch_acc
                     best_model_wts = copy.deepcopy(self.model.state_dict())
+                    epochs_without_improvement = 0
+                elif phase == 'val':
+                    epochs_without_improvement += 1
+            
+            # 檢查是否達到目標訓練準確率
+            if epoch_train_acc >= self.target_accuracy:
+                print(f"\n🎉 達到目標訓練準確率 {self.target_accuracy*100:.1f}%！")
+                print(f"實際訓練準確率: {epoch_train_acc*100:.2f}%")
+                print(f"在第 {epoch+1} 輪達成目標")
+                break
+            
+            # 早停機制（但主要關注訓練準確率）
+            if epochs_without_improvement >= max_patience:
+                print(f"\n⏰ 驗證準確率 {max_patience} 輪無改善，但繼續追求訓練準確率...")
+                # 不停止訓練，繼續追求100%訓練準確率
             
             print()
         
@@ -159,8 +195,12 @@ class CatDogClassifier:
         print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s')
         print(f'Best val Acc: {best_acc:4f}')
         
-        # 加載最佳模型權重
-        self.model.load_state_dict(best_model_wts)
+        # 如果沒有達到目標，使用當前模型
+        if epoch_train_acc < self.target_accuracy:
+            print(f"⚠️ 未完全達到目標，最終訓練準確率: {epoch_train_acc*100:.2f}%")
+            self.model.load_state_dict(self.model.state_dict())  # 使用最後的模型
+        else:
+            self.model.load_state_dict(self.model.state_dict())  # 使用達成目標的模型
         
         # 繪製訓練曲線
         self.plot_training_curves(train_losses, val_losses, train_accuracies, val_accuracies)
@@ -169,89 +209,93 @@ class CatDogClassifier:
     
     def plot_training_curves(self, train_losses, val_losses, train_accs, val_accs):
         """繪製訓練曲線"""
-        plt.figure(figsize=(12, 4))
+        plt.figure(figsize=(15, 5))
         
-        plt.subplot(1, 2, 1)
-        plt.plot(train_losses, label='Train Loss')
-        plt.plot(val_losses, label='Val Loss')
+        plt.subplot(1, 3, 1)
+        plt.plot(train_losses, label='Train Loss', color='blue')
+        plt.plot(val_losses, label='Val Loss', color='red')
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
         plt.legend()
         plt.title('Training and Validation Loss')
+        plt.grid(True)
         
-        plt.subplot(1, 2, 2)
-        plt.plot(train_accs, label='Train Acc')
-        plt.plot(val_accs, label='Val Acc')
+        plt.subplot(1, 3, 2)
+        plt.plot(train_accs, label='Train Acc', color='blue')
+        plt.plot(val_accs, label='Val Acc', color='red')
+        plt.axhline(y=self.target_accuracy, color='green', linestyle='--', label=f'Target ({self.target_accuracy*100:.0f}%)')
         plt.xlabel('Epoch')
         plt.ylabel('Accuracy')
         plt.legend()
         plt.title('Training and Validation Accuracy')
+        plt.grid(True)
+        
+        plt.subplot(1, 3, 3)
+        # 放大訓練準確率曲線
+        plt.plot(train_accs, label='Train Acc', color='blue', linewidth=2)
+        plt.axhline(y=self.target_accuracy, color='green', linestyle='--', label=f'Target ({self.target_accuracy*100:.0f}%)')
+        plt.xlabel('Epoch')
+        plt.ylabel('Training Accuracy')
+        plt.ylim(0.9, 1.01)  # 放大到90%-100%區間
+        plt.legend()
+        plt.title('Training Accuracy (Zoomed)')
+        plt.grid(True)
         
         plt.tight_layout()
-        plt.savefig('training_curves.png')
+        plt.savefig('overfit_training_curves.png', dpi=300, bbox_inches='tight')
+        print(f"✅ 訓練曲線已保存到: overfit_training_curves.png")
         plt.show()
     
-    def save_model(self, filepath='cat_dog_classifier.pth'):
-        """保存模型"""
+    def save_model(self, filepath='perfect_cat_dog_model.pth'):
+        """保存達到100%準確率的模型"""
         torch.save({
             'model_state_dict': self.model.state_dict(),
             'class_names': self.class_names,
-            'model_architecture': 'resnet18'
+            'model_architecture': 'resnet50_overfitted',
+            'target_accuracy': self.target_accuracy,
+            'training_type': 'overfitted_for_perfect_accuracy'
         }, filepath)
-        print(f"模型已保存到 {filepath}")
-    
-    def predict_image(self, image_path):
-        """預測單張圖片"""
-        self.model.eval()
-        
-        # 加載和預處理圖片
-        image = Image.open(image_path).convert('RGB')
-        transform = self.data_transforms['val']
-        image_tensor = transform(image).unsqueeze(0).to(self.device)
-        
-        # 預測
-        with torch.no_grad():
-            outputs = self.model(image_tensor)
-            probabilities = torch.nn.functional.softmax(outputs[0], dim=0)
-            _, predicted = torch.max(outputs, 1)
-        
-        # 返回結果
-        predicted_class = self.class_names[predicted.item()]
-        confidence = probabilities[predicted.item()].item()
-        
-        return predicted_class, confidence
+        print(f"🎯 完美擬合模型已保存到: {filepath}")
 
 def main():
-    # 設置數據路徑
-    data_dir = 'file/kaggle_cats_vs_dogs_f'  # 你的數據集路徑
+    parser = argparse.ArgumentParser(description='訓練100%準確率的貓狗分類器')
+    parser.add_argument('--data-dir', type=str, default='kaggle_cats_vs_dogs_f',
+                       help='數據集路徑')
+    parser.add_argument('--architecture', type=str, default='resnet50',
+                       choices=['resnet18', 'resnet34', 'resnet50', 'resnet101'],
+                       help='模型架構')
+    parser.add_argument('--target-accuracy', type=float, default=1.0,
+                       help='目標訓練準確率 (0.0-1.0)')
+    parser.add_argument('--max-epochs', type=int, default=200,
+                       help='最大訓練輪數')
     
-    # 檢查數據路徑是否存在
-    if not os.path.exists(data_dir):
-        print(f"錯誤：找不到數據路徑 {data_dir}")
-        print("請確保數據集已下載並放在正確的位置")
+    args = parser.parse_args()
+    
+    # 檢查數據路徑
+    if not os.path.exists(args.data_dir):
+        print(f"❌ 找不到數據路徑: {args.data_dir}")
         return
     
-    # 創建分類器實例
-    classifier = CatDogClassifier(
-        data_dir=data_dir,
-        batch_size=32,
-        learning_rate=0.001,
-        num_epochs=25
-    )
+    print("🎯 100% 訓練準確率專用訓練器")
+    print("=" * 50)
+    print(f"📂 數據路徑: {args.data_dir}")
+    print(f"🏗️ 模型架構: {args.architecture}")
+    print(f"🎯 目標準確率: {args.target_accuracy*100:.1f}%")
+    print(f"🔄 最大輪數: {args.max_epochs}")
     
-    # 加載數據
-    classifier.load_data()
+    # 創建訓練器
+    trainer = OverfitTrainer(args.data_dir, args.target_accuracy)
     
-    # 構建模型
-    classifier.build_model()
+    # 訓練流程
+    trainer.load_data()
+    trainer.build_model(args.architecture)
+    trainer.train_to_perfection(args.max_epochs)
+    trainer.save_model('perfect_cat_dog_model.pth')
     
-    # 訓練模型
-    trained_model = classifier.train_model()
-    
-    # 保存模型
-    classifier.save_model('best_cat_dog_model.pth')
-    
-    print("訓練完成！")
+    print("\n🎉 訓練完成！")
+    print("\n📋 接下來你可以:")
+    print("1. 使用 python predict.py --model perfect_cat_dog_model.pth --evaluate-train")
+    print("2. 驗證是否達到 100% 訓練準確率")
 
 if __name__ == '__main__':
     main()
