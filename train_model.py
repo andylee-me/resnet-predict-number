@@ -290,11 +290,11 @@ def main():
     trainer.load_data()
     trainer.build_model(args.architecture)
     trainer.train_to_perfection(args.max_epochs)
-    trainer.save_model('perfect_cat_dog_model.pth')
+    trainer.save_model('best_cat_dog_model.pth')
     
     print("\n🎉 訓練完成！")
     print("\n📋 接下來你可以:")
-    print("1. 使用 python predict.py --model perfect_cat_dog_model.pth --evaluate-train")
+    print("1. 使用 python predict.py --model best_cat_dog_model.pth --evaluate-train")
     print("2. 驗證是否達到 100% 訓練準確率")
 
 if __name__ == '__main__':
