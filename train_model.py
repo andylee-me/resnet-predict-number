@@ -266,7 +266,7 @@ def main():
                        help='模型架構')
     parser.add_argument('--target-accuracy', type=float, default=1.0,
                        help='目標訓練準確率 (0.0-1.0)')
-    parser.add_argument('--max-epochs', type=int, default=200,
+    parser.add_argument('--max-epochs', type=int, default=5,
                        help='最大訓練輪數')
     
     args = parser.parse_args()
