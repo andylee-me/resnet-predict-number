@@ -101,7 +101,7 @@ class OverfitTrainer:
         
         print(f"✅ 模型已構建，所有層均可訓練")
         
-    def train_to_perfection(self, max_epochs=200):
+    def train_to_perfection(self, max_epochs=5):
         """訓練直到達到目標準確率"""
         print(f"🚀 開始訓練到 {self.target_accuracy*100:.1f}% 準確率...")
         print(f"🔄 最大訓練輪數: {max_epochs}")
