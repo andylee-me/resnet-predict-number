@@ -259,7 +259,7 @@ class OverfitTrainer:
 
 def main():
     parser = argparse.ArgumentParser(description='訓練100%準確率的貓狗分類器')
-    parser.add_argument('--data-dir', type=str, default='kaggle_cats_vs_dogs_f',
+    parser.add_argument('--data-dir', type=str, default='file/kaggle_cats_vs_dogs_f',
                        help='數據集路徑')
     parser.add_argument('--architecture', type=str, default='resnet50',
                        choices=['resnet18', 'resnet34', 'resnet50', 'resnet101'],
