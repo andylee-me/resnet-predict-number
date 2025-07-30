@@ -101,7 +101,7 @@ class OverfitTrainer:
         
         print(f"✅ 模型已構建，所有層均可訓練")
         
-    def train_to_perfection(self, max_epochs=5):
+    def train_to_perfection(self, max_epochs=200):
         """訓練直到達到目標準確率"""
         print(f"🚀 開始訓練到 {self.target_accuracy*100:.1f}% 準確率...")
         print(f"🔄 最大訓練輪數: {max_epochs}")
@@ -266,7 +266,7 @@ def main():
                        help='模型架構')
     parser.add_argument('--target-accuracy', type=float, default=1.0,
                        help='目標訓練準確率 (0.0-1.0)')
-    parser.add_argument('--max-epochs', type=int, default=5,
+    parser.add_argument('--max-epochs', type=int, default=200,
                        help='最大訓練輪數')
     
     args = parser.parse_args()
