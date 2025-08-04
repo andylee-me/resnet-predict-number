@@ -259,7 +259,7 @@ class OverfitTrainer:
 
 def main():
     parser = argparse.ArgumentParser(description='訓練100%準確率的貓狗分類器')
-    parser.add_argument('--data-dir', type=str, default='kaggle_cats_vs_dogs_f',
+    parser.add_argument('--data-dir', type=str, default='file/kaggle_cats_vs_dogs_f',
                        help='數據集路徑')
     parser.add_argument('--architecture', type=str, default='resnet50',
                        choices=['resnet18', 'resnet34', 'resnet50', 'resnet101'],
@@ -290,7 +290,7 @@ def main():
     trainer.load_data()
     trainer.build_model(args.architecture)
     trainer.train_to_perfection(args.max_epochs)
-    trainer.save_model('perfect_cat_dog_model.pth')
+    trainer.save_model('best_cat_dog_model.pth')
     
     print("\n🎉 訓練完成！")
     print("\n📋 接下來你可以:")
