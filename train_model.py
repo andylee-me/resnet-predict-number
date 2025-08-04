@@ -246,7 +246,7 @@ class OverfitTrainer:
         print(f"✅ 訓練曲線已保存到: overfit_training_curves.png")
         plt.show()
     
-    def save_model(self, filepath='perfect_cat_dog_model.pth'):
+    def save_model(self, filepath='best_cat_dog_model.pth'):
         """保存達到100%準確率的模型"""
         torch.save({
             'model_state_dict': self.model.state_dict(),
@@ -259,7 +259,7 @@ class OverfitTrainer:
 
 def main():
     parser = argparse.ArgumentParser(description='訓練100%準確率的貓狗分類器')
-    parser.add_argument('--data-dir', type=str, default='file/kaggle_cats_vs_dogs_f',
+    parser.add_argument('--data-dir', type=str, default='kaggle_cats_vs_dogs_f',
                        help='數據集路徑')
     parser.add_argument('--architecture', type=str, default='resnet50',
                        choices=['resnet18', 'resnet34', 'resnet50', 'resnet101'],
