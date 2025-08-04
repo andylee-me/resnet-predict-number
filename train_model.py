@@ -4,7 +4,7 @@
 通過使用更大模型、更小學習率、更多訓練輪數來實現完全過擬合
 """
 
-import torch
+import torch 
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
