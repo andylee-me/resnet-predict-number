@@ -296,6 +296,7 @@ def main():
     print("\n📋 接下來你可以:")
     print("1. 使用 python predict.py --model perfect_cat_dog_model.pth --evaluate-train")
     print("2. 驗證是否達到 100% 訓練準確率")
+main()
 
-if __name__ == '__main__':
-    main()
+
+
