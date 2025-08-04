@@ -345,5 +345,5 @@ def main():
         print("  python predict.py --evaluate-all")
         print("  python predict.py --image cat.jpg")
 
-if __name__ == '__main__':
-    main()
+
+main()
