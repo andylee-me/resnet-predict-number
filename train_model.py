@@ -4,7 +4,7 @@
 通過使用更大模型、更小學習率、更多訓練輪數來實現完全過擬合
 """
 
-import torch 
+import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
@@ -259,7 +259,7 @@ class OverfitTrainer:
 
 def main():
     parser = argparse.ArgumentParser(description='訓練100%準確率的貓狗分類器')
-    parser.add_argument('--data-dir', type=str, default='file/kaggle_cats_vs_dogs_f',
+    parser.add_argument('--data-dir', type=str, default='kaggle_cats_vs_dogs_f',
                        help='數據集路徑')
     parser.add_argument('--architecture', type=str, default='resnet50',
                        choices=['resnet18', 'resnet34', 'resnet50', 'resnet101'],
@@ -290,11 +290,11 @@ def main():
     trainer.load_data()
     trainer.build_model(args.architecture)
     trainer.train_to_perfection(args.max_epochs)
-    trainer.save_model('best_cat_dog_model.pth')
+    trainer.save_model('perfect_cat_dog_model.pth')
     
     print("\n🎉 訓練完成！")
     print("\n📋 接下來你可以:")
-    print("1. 使用 python predict.py --model best_cat_dog_model.pth --evaluate-train")
+    print("1. 使用 python predict.py --model perfect_cat_dog_model.pth --evaluate-train")
     print("2. 驗證是否達到 100% 訓練準確率")
 
 if __name__ == '__main__':
