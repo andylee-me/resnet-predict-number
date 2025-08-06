@@ -467,7 +467,7 @@ class HandwrittenResNetTrainer:
             'class_names': self.class_names,
             'model_architecture': f'Handwritten{self.architecture.upper()}',
             'target_accuracy': self.target_accuracy,
-            'training_type': 'handwritten_resnet_from_scratch'
+            'training_type': 'best_cat_dog_model'
         }, filepath)
         print(f"🎯 手寫ResNet模型已保存: {filepath}")
 
@@ -503,11 +503,11 @@ def main():
     trainer.load_data()
     trainer.build_model()
     trainer.train_to_perfection(args.max_epochs)
-    trainer.save_model('handwritten_resnet_model.pth')
+    trainer.save_model('best_cat_dog_model.pth')
     
     print("\n🎉 手寫ResNet訓練完成！")
     print("\n📋 接下來你可以:")
-    print("1. python predict.py --model handwritten_resnet_model.pth --evaluate-train")
+    print("1. python predict.py --model best_cat_dog_model.pth --evaluate-train")
     print("2. 驗證是否達到 100% 訓練準確率")
 
 
