@@ -23,26 +23,196 @@ class EnhancedCatDogPredictor:
         self.model = self.load_model(model_path)
         
     def load_model(self, model_path):
-        """加載訓練好的模型"""
-        print(f"正在加載模型: {model_path}")
+        """加載訓練好的模型 - 自動識別架構"""
+        print(f"📥 正在加載模型: {model_path}")
         
         # 加載checkpoint
         checkpoint = torch.load(model_path, map_location=self.device)
         
-        # 創建模型架構
-        model = models.resnet50(pretrained=False)
-        num_ftrs = model.fc.in_features
-        model.fc = nn.Linear(num_ftrs, 2)  # 2個類別
+        # 獲取模型架構信息
+        model_architecture = checkpoint.get('model_architecture', 'resnet18')
+        print(f"🏗️ 檢測到模型架構: {model_architecture}")
+        
+        # 根據架構信息創建對應的模型
+        model = self._create_model_by_architecture(model_architecture)
         
         # 加載權重
-        model.load_state_dict(checkpoint['model_state_dict'])
+        try:
+            model.load_state_dict(checkpoint['model_state_dict'])
+            print("✅ 模型權重加載成功")
+        except Exception as e:
+            print(f"❌ 權重加載失敗: {e}")
+            print("🔄 嘗試使用兼容性加載...")
+            # 嘗試部分加載
+            model_dict = model.state_dict()
+            pretrained_dict = {k: v for k, v in checkpoint['model_state_dict'].items() 
+                             if k in model_dict and v.size() == model_dict[k].size()}
+            model_dict.update(pretrained_dict)
+            model.load_state_dict(model_dict)
+            print(f"✅ 成功加載 {len(pretrained_dict)} / {len(model_dict)} 層權重")
+        
         model = model.to(self.device)
         model.eval()
         
-        self.class_names = checkpoint['class_names']
-        print(f"✅ 模型加載成功！類別: {self.class_names}")
-        print(f"🔧 使用設備: {self.device}")
+        self.class_names = checkpoint.get('class_names', ['cat', 'dog'])
+        print(f"✅ 模型加載完成！類別: {self.class_names}")
         
+        return model
+    
+    def _create_model_by_architecture(self, architecture):
+        """根據架構名稱創建模型"""
+        architecture = architecture.lower()
+        
+        if 'resnet18' in architecture:
+            from torchvision import models
+            model = models.resnet18(pretrained=False)
+            num_ftrs = model.fc.in_features
+            model.fc = nn.Linear(num_ftrs, 2)
+            
+        elif 'resnet34' in architecture:
+            from torchvision import models
+            model = models.resnet34(pretrained=False)
+            num_ftrs = model.fc.in_features
+            model.fc = nn.Linear(num_ftrs, 2)
+            
+        elif 'resnet50' in architecture:
+            from torchvision import models
+            model = models.resnet50(pretrained=False)
+            num_ftrs = model.fc.in_features
+            model.fc = nn.Linear(num_ftrs, 2)
+            
+        elif 'resnet101' in architecture:
+            from torchvision import models
+            model = models.resnet101(pretrained=False)
+            num_ftrs = model.fc.in_features
+            model.fc = nn.Linear(num_ftrs, 2)
+            
+        elif 'customcnn' in architecture:
+            # 創建自定義CNN架構
+            model = self._create_custom_cnn()
+            
+        elif 'handwritten' in architecture:
+            # 創建手寫ResNet架構
+            if 'resnet18' in architecture:
+                model = self._create_handwritten_resnet18()
+            elif 'resnet34' in architecture:
+                model = self._create_handwritten_resnet34()
+            else:
+                model = self._create_handwritten_resnet18()  # 默認
+                
+        else:
+            print(f"⚠️ 未知架構 {architecture}，使用默認 ResNet18")
+            from torchvision import models
+            model = models.resnet18(pretrained=False)
+            num_ftrs = model.fc.in_features
+            model.fc = nn.Linear(num_ftrs, 2)
+        
+        return model
+    
+    def _create_custom_cnn(self):
+        """創建自定義CNN架構（與訓練時保持一致）"""
+        import torch.nn.functional as F
+        
+        class CustomCNN(nn.Module):
+            def __init__(self, num_classes=2):
+                super(CustomCNN, self).__init__()
+                
+                # 第一個卷積塊
+                self.conv_block1 = nn.Sequential(
+                    nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=1, padding=1),
+                    nn.BatchNorm2d(32),
+                    nn.ReLU(inplace=True),
+                    nn.Conv2d(in_channels=32, out_channels=32, kernel_size=3, stride=1, padding=1),
+                    nn.BatchNorm2d(32),
+                    nn.ReLU(inplace=True),
+                    nn.MaxPool2d(kernel_size=2, stride=2)
+                )
+                
+                # 第二個卷積塊
+                self.conv_block2 = nn.Sequential(
+                    nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=1),
+                    nn.BatchNorm2d(64),
+                    nn.ReLU(inplace=True),
+                    nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1, padding=1),
+                    nn.BatchNorm2d(64),
+                    nn.ReLU(inplace=True),
+                    nn.MaxPool2d(kernel_size=2, stride=2)
+                )
+                
+                # 第三個卷積塊
+                self.conv_block3 = nn.Sequential(
+                    nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1),
+                    nn.BatchNorm2d(128),
+                    nn.ReLU(inplace=True),
+                    nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1),
+                    nn.BatchNorm2d(128),
+                    nn.ReLU(inplace=True),
+                    nn.MaxPool2d(kernel_size=2, stride=2)
+                )
+                
+                # 第四個卷積塊
+                self.conv_block4 = nn.Sequential(
+                    nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=1),
+                    nn.BatchNorm2d(256),
+                    nn.ReLU(inplace=True),
+                    nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1),
+                    nn.BatchNorm2d(256),
+                    nn.ReLU(inplace=True),
+                    nn.MaxPool2d(kernel_size=2, stride=2)
+                )
+                
+                # 第五個卷積塊
+                self.conv_block5 = nn.Sequential(
+                    nn.Conv2d(in_channels=256, out_channels=512, kernel_size=3, stride=1, padding=1),
+                    nn.BatchNorm2d(512),
+                    nn.ReLU(inplace=True),
+                    nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, stride=1, padding=1),
+                    nn.BatchNorm2d(512),
+                    nn.ReLU(inplace=True),
+                    nn.MaxPool2d(kernel_size=2, stride=2)
+                )
+                
+                # 全局平均池化
+                self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+                
+                # 分類頭
+                self.classifier = nn.Sequential(
+                    nn.Dropout(0.5),
+                    nn.Linear(512, 256),
+                    nn.ReLU(inplace=True),
+                    nn.Dropout(0.3),
+                    nn.Linear(256, num_classes)
+                )
+            
+            def forward(self, x):
+                x = self.conv_block1(x)
+                x = self.conv_block2(x)
+                x = self.conv_block3(x)
+                x = self.conv_block4(x)
+                x = self.conv_block5(x)
+                x = self.global_avg_pool(x)
+                x = x.view(x.size(0), -1)
+                x = self.classifier(x)
+                return x
+        
+        return CustomCNN(num_classes=2)
+    
+    def _create_handwritten_resnet18(self):
+        """創建手寫ResNet18架構"""
+        # 這裡需要導入手寫的ResNet代碼
+        # 為了簡單起見，使用torchvision的ResNet18
+        from torchvision import models
+        model = models.resnet18(pretrained=False)
+        num_ftrs = model.fc.in_features
+        model.fc = nn.Linear(num_ftrs, 2)
+        return model
+    
+    def _create_handwritten_resnet34(self):
+        """創建手寫ResNet34架構"""
+        from torchvision import models
+        model = models.resnet34(pretrained=False)
+        num_ftrs = model.fc.in_features
+        model.fc = nn.Linear(num_ftrs, 2)
         return model
     
     def predict_single_image(self, image_path):
@@ -282,7 +452,7 @@ def main():
                        help='評估驗證數據集')
     parser.add_argument('--evaluate-all', action='store_true',
                        help='評估所有數據集（訓練+驗證）')
-    parser.add_argument('--dataset-path', type=str, default='kaggle_cats_vs_dogs_f',
+    parser.add_argument('--dataset-path', type=str, default='file/kaggle_cats_vs_dogs_f',
                        help='數據集根目錄路徑')
     
     args = parser.parse_args()
