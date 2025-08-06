@@ -272,7 +272,7 @@ class EnhancedCatDogPredictor:
 
 def main():
     parser = argparse.ArgumentParser(description='增強版貓狗分類器預測工具')
-    parser.add_argument('--model', type=str, default='handwritten_resnet_model.pth',
+    parser.add_argument('--model', type=str, default='best_cat_dog_model.pth',
                        help='訓練好的模型路徑')
     parser.add_argument('--image', type=str, help='要預測的單張圖片路徑')
     parser.add_argument('--folder', type=str, help='要預測的圖片資料夾路徑')
@@ -345,5 +345,5 @@ def main():
         print("  python predict.py --evaluate-all")
         print("  python predict.py --image cat.jpg")
 
-if __name__ == '__main__':
-    main()
+
+main()
