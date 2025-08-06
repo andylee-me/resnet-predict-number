@@ -207,7 +207,7 @@ def resnet34(num_classes=2, **kwargs):
 class HandwrittenResNetTrainer:
     """手寫ResNet訓練器"""
     
-    def __init__(self, data_dir, architecture='resnet18', target_accuracy=1.0):
+    def __init__(self, data_dir, architecture='resnet34', target_accuracy=1.0):
         self.data_dir = data_dir
         self.architecture = architecture
         self.target_accuracy = target_accuracy
