@@ -69,7 +69,7 @@ class OverfitTrainer:
         print(f"✅ 驗證集大小: {self.dataset_sizes['val']}")
         print(f"✅ 類別: {self.class_names}")
         
-    def build_model(self, architecture='resnet50'):
+    def build_model(self, architecture='resnet18'):
         """構建更大容量的模型"""
         print(f"🏗️ 正在構建模型: {architecture}")
         
@@ -261,7 +261,7 @@ def main():
     parser = argparse.ArgumentParser(description='訓練100%準確率的貓狗分類器')
     parser.add_argument('--data-dir', type=str, default='file/kaggle_cats_vs_dogs_f',
                        help='數據集路徑')
-    parser.add_argument('--architecture', type=str, default='resnet50',
+    parser.add_argument('--architecture', type=str, default='resnet18',
                        choices=['resnet18', 'resnet34', 'resnet50', 'resnet101'],
                        help='模型架構')
     parser.add_argument('--target-accuracy', type=float, default=1.0,
