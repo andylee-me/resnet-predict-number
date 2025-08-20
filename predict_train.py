@@ -30,7 +30,7 @@ class EnhancedCatDogPredictor:
         checkpoint = torch.load(model_path, map_location=self.device)
         
         # 創建模型架構
-        model = models.resnet18(pretrained=False)
+        model = models.resnet34(pretrained=False)
         num_ftrs = model.fc.in_features
         model.fc = nn.Linear(num_ftrs, 2)  # 2個類別
         
