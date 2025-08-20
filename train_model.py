@@ -74,19 +74,19 @@ class OverfitTrainer:
         print(f"🏗️ 正在構建模型: {architecture}")
         
         if architecture == 'resnet50':
-            self.model = models.resnet50(pretrained=True)
+            self.model = models.resnet50(pretrained=False)
             num_ftrs = self.model.fc.in_features
             self.model.fc = nn.Linear(num_ftrs, 2)
         elif architecture == 'resnet101':
-            self.model = models.resnet101(pretrained=True)
+            self.model = models.resnet101(pretrained=False)
             num_ftrs = self.model.fc.in_features
             self.model.fc = nn.Linear(num_ftrs, 2)
         elif architecture == 'resnet34':
-            self.model = models.resnet34(pretrained=True)
+            self.model = models.resnet34(pretrained=False)
             num_ftrs = self.model.fc.in_features
             self.model.fc = nn.Linear(num_ftrs, 2)
         else:  # resnet18
-            self.model = models.resnet18(pretrained=True)
+            self.model = models.resnet18(pretrained=False)
             num_ftrs = self.model.fc.in_features
             self.model.fc = nn.Linear(num_ftrs, 2)
         
