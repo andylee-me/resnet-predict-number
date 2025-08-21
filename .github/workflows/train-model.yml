@@ -1,4 +1,4 @@
-name: Train Cat-Dog Classifier
+: Train Cat-Dog Classifier
 
 on:
   push:
@@ -31,15 +31,16 @@ jobs:
         pip install -r requirements.txt
         pip install kaggle gdown
 
-    # 下載上一輪的 ckpt（若沒有則忽略）
     - name: Download last checkpoint (if any)
       uses: dawidd6/action-download-artifact@v6
       with:
-        workflow: train.yml            # ← 這個檔名要與本 workflow 檔名一致
         name: ckpt
         path: ckpt_in
         search_artifacts: true
         if_no_artifact_found: ignore
+        branch: main                # 依你的主要分支調整
+        workflow_conclusion: completed
+
 
     - name: Build RESUME_ARG
       id: resume
