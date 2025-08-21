@@ -54,6 +54,15 @@ jobs:
           echo "No checkpoint found, start fresh."
         fi
 
+    # 選項2: 從 Google Drive 下載數據集 (備用選項)
+    - name: Download dataset from Google Drive
+      run: |
+        echo "從 Google Drive 下載數據集..."
+        gdown https://drive.google.com/uc?id=19QvyV00Zq6dwRY3hA8z_PyHB-naUUMB7 -O dataset.zip
+        unzip dataset.zip -d file/
+        echo "✅ 解壓完成，資料放在 file/ 資料夾內"
+      if: env.KAGGLE_USERNAME == '' || env.KAGGLE_KEY == ''
+
     # 你現有的資料下載＆整理（略）
 
     - name: Verify dataset structure
