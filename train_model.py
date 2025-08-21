@@ -129,7 +129,10 @@ class OverfitTrainer:
                 self.model.train(is_train)
                 running_loss, running_corrects = 0.0, 0
 
-                for inputs, labels in self.dataloaders[phase]:
+                total_steps = len(self.dataloaders[phase])  # ← 新增：此階段總步數
+
+                # ====== 這段是改過的：加 enumerate 與進度輸出 ======
+                for bidx, (inputs, labels) in enumerate(self.dataloaders[phase]):
                     # 牆鐘時間防護：每個 batch 都檢查
                     if max_wall_min and (time.time() - since) / 60.0 > max_wall_min:
                         self.save_ckpt(epoch, best_acc, path='checkpoint_latest.pth')
@@ -152,6 +155,15 @@ class OverfitTrainer:
                     running_loss += loss.item() * inputs.size(0)
                     running_corrects += torch.sum(preds == labels)
 
+                    # ← 新增：每 20 個 step 印一次進度（可自行調整頻率）
+                    if (bidx + 1) % 20 == 0 or (bidx + 1) == total_steps:
+                        done = (bidx + 1) * inputs.size(0)
+                        total = self.dataset_sizes[phase]
+                        print(f"  [{phase}] step {bidx+1}/{total_steps} "
+                              f"~{min(done, total)}/{total} samples",
+                              flush=True)
+                # ====== 到此為止 ======
+
                 epoch_loss = running_loss / self.dataset_sizes[phase]
                 epoch_acc = running_corrects.double() / self.dataset_sizes[phase]
                 print(f'{phase} Loss: {epoch_loss:.6f} Acc: {epoch_acc:.4f} ({epoch_acc*100:.2f}%)')
@@ -166,6 +178,7 @@ class OverfitTrainer:
                     if epoch_acc > best_acc:
                         best_acc = epoch_acc
                         self.save_ckpt(epoch, best_acc, path='checkpoint_best.pth')
+
 
             # 每個 epoch 結束都覆蓋 latest；也可定期固存
             self.save_ckpt(epoch, best_acc, path='checkpoint_latest.pth')
