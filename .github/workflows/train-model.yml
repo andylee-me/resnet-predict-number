@@ -69,7 +69,7 @@ jobs:
           --architecture resnet34 \
           --max-epochs 200 \
           --save-every 5 \
-          --max-wall-min 330 \
+          --max-wall-min 250 \
           ${{ steps.resume.outputs.resume }}
 
     - name: Upload checkpoint for next run
