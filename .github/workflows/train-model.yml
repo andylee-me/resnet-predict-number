@@ -1,4 +1,4 @@
-: Train Cat-Dog Classifier
+name: Train Cat-Dog Classifier
 
 on:
   push:
@@ -31,6 +31,7 @@ jobs:
         pip install -r requirements.txt
         pip install kaggle gdown
 
+    # 下載上一輪的 ckpt（若沒有則忽略）
     - name: Download last checkpoint (if any)
       uses: dawidd6/action-download-artifact@v6
       with:
@@ -38,7 +39,7 @@ jobs:
         path: ckpt_in
         search_artifacts: true
         if_no_artifact_found: ignore
-        branch: main                # 依你的主要分支調整
+        branch: claude-resnet34-no-pre-test  # 依你的主要分支調整
         workflow_conclusion: completed
 
 
@@ -70,7 +71,7 @@ jobs:
           --architecture resnet34 \
           --max-epochs 200 \
           --save-every 5 \
-          --max-wall-min 250 \
+          --max-wall-min 330 \
           ${{ steps.resume.outputs.resume }}
 
     - name: Upload checkpoint for next run
