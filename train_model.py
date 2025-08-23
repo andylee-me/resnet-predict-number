@@ -2,14 +2,14 @@
 """
 分段續訓 + 牆鐘時間保護版
 - --resume 從上次 checkpoint 接續
-- --save-every 每 N 個 epoch 固定存檔，且每輪都覆蓋 ckpt_<arch>_latest.pth
+- --save-every 每 N 個 epoch 固定存檔，且每輪都覆蓋 checkpoint_latest.pth
 - --max-wall-min 逼近 6h 前自動保存並優雅退出，避免 GH Actions 被強殺
 """
 
 import torch, torch.nn as nn, torch.optim as optim
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms, models
-import argparse, os, time, matplotlib.pyplot as plt, numpy as np
+import argparse, os, time, copy, matplotlib.pyplot as plt, numpy as np
 
 class OverfitTrainer:
     def __init__(self, data_dir, target_accuracy=1.0):
@@ -27,6 +27,7 @@ class OverfitTrainer:
 
         torch.manual_seed(42); np.random.seed(42)
 
+        # 減少隨機性以利過擬合
         self.data_transforms = {
             'train': transforms.Compose([
                 transforms.Resize(256),
@@ -46,7 +47,6 @@ class OverfitTrainer:
         self.optimizer = None
         self.criterion = nn.CrossEntropyLoss()
         self.dataloaders, self.dataset_sizes, self.class_names = {}, {}, []
-        self.arch_name = None  # ← 記錄本次架構
 
     def load_data(self, batch_size=8, num_workers=4):
         print("📂 正在加載數據...")
@@ -69,17 +69,15 @@ class OverfitTrainer:
         print(f"✅ 類別: {self.class_names}")
 
     def build_model(self, architecture='resnet18', lr=1e-5, weight_decay=0.0):
-        self.arch_name = architecture
-        print(f"🏗️ 正在構建模型: {architecture} (weights=None)")
+        print(f"🏗️ 正在構建模型: {architecture} (pretrained=False)")
         if architecture == 'resnet50':
-            self.model = models.resnet50(weights=None)
+            self.model = models.resnet50(pretrained=False)
         elif architecture == 'resnet101':
-            self.model = models.resnet101(weights=None)
-        elif architecture == 'resnet34':
-            self.model = models.resnet34(weights=None)
+            self.model = models.resnet101(pretrained=False)
+        elif architecture == 'resnet18':
+            self.model = models.resnet18(pretrained=False)
         else:
-            self.model = models.resnet18(weights=None)
-
+            self.model = models.resnet34(pretrained=False)
         num_ftrs = self.model.fc.in_features
         self.model.fc = nn.Linear(num_ftrs, 2)
         for p in self.model.parameters(): p.requires_grad = True
@@ -88,25 +86,13 @@ class OverfitTrainer:
         print("✅ 模型已構建，所有層均可訓練")
 
     # ---------- Checkpoint I/O ----------
-    def _ckpt_name(self, kind, epoch=None):
-        if kind == "latest":
-            return f"ckpt_{self.arch_name}_latest.pth"
-        if kind == "best":
-            return f"ckpt_{self.arch_name}_best.pth"
-        if kind == "epoch":
-            return f"ckpt_{self.arch_name}_epoch{epoch}.pth"
-        return f"ckpt_{self.arch_name}.pth"
-
-    def save_ckpt(self, epoch, best_acc, path=None):
-        if path is None:
-            path = self._ckpt_name("epoch", epoch+1)
+    def save_ckpt(self, epoch, best_acc, path='checkpoint_latest.pth'):
         state = {
             'epoch': epoch,
             'model_state': self.model.state_dict(),
             'optimizer_state': self.optimizer.state_dict(),
             'best_acc': float(best_acc),
             'class_names': self.class_names,
-            'arch': self.arch_name,
         }
         torch.save(state, path)
         print(f'💾 已保存 checkpoint: {path} (epoch={epoch+1})')
@@ -118,7 +104,6 @@ class OverfitTrainer:
         start_epoch = int(ckpt.get('epoch', -1)) + 1
         best_acc = float(ckpt.get('best_acc', 0.0))
         if ckpt.get('class_names'): self.class_names = ckpt['class_names']
-        if ckpt.get('arch'): self.arch_name = ckpt['arch']
         print(f'↩️ 讀取 checkpoint: {path}，從 epoch {start_epoch+1} 繼續（best_val_acc={best_acc:.4f}）')
         return start_epoch, best_acc
 
@@ -143,12 +128,14 @@ class OverfitTrainer:
                 is_train = (phase == 'train')
                 self.model.train(is_train)
                 running_loss, running_corrects = 0.0, 0
-                total_steps = len(self.dataloaders[phase])
 
+                total_steps = len(self.dataloaders[phase])  # ← 新增：此階段總步數
+
+                # ====== 這段是改過的：加 enumerate 與進度輸出 ======
                 for bidx, (inputs, labels) in enumerate(self.dataloaders[phase]):
-                    # 牆鐘時間防護
+                    # 牆鐘時間防護：每個 batch 都檢查
                     if max_wall_min and (time.time() - since) / 60.0 > max_wall_min:
-                        self.save_ckpt(epoch, best_acc, path=self._ckpt_name("latest"))
+                        self.save_ckpt(epoch, best_acc, path='checkpoint_latest.pth')
                         with open('NEED_MORE.txt', 'w') as f: f.write('continue')
                         print('⏱️ 達到本輪時間配額，已保存 ckpt，優雅退出以避免 6h 強制中斷。')
                         return
@@ -168,10 +155,14 @@ class OverfitTrainer:
                     running_loss += loss.item() * inputs.size(0)
                     running_corrects += torch.sum(preds == labels)
 
+                    # ← 新增：每 20 個 step 印一次進度（可自行調整頻率）
                     if (bidx + 1) % 20 == 0 or (bidx + 1) == total_steps:
                         done = (bidx + 1) * inputs.size(0)
                         total = self.dataset_sizes[phase]
-                        print(f"  [{phase}] step {bidx+1}/{total_steps} ~{min(done, total)}/{total} samples", flush=True)
+                        print(f"  [{phase}] step {bidx+1}/{total_steps} "
+                              f"~{min(done, total)}/{total} samples",
+                              flush=True)
+                # ====== 到此為止 ======
 
                 epoch_loss = running_loss / self.dataset_sizes[phase]
                 epoch_acc = running_corrects.double() / self.dataset_sizes[phase]
@@ -186,12 +177,13 @@ class OverfitTrainer:
                     val_accuracies.append(epoch_acc.item())
                     if epoch_acc > best_acc:
                         best_acc = epoch_acc
-                        self.save_ckpt(epoch, best_acc, path=self._ckpt_name("best"))
+                        self.save_ckpt(epoch, best_acc, path='checkpoint_best.pth')
 
-            # 每個 epoch 結束：更新 latest + 週期固存
-            self.save_ckpt(epoch, best_acc, path=self._ckpt_name("latest"))
+
+            # 每個 epoch 結束都覆蓋 latest；也可定期固存
+            self.save_ckpt(epoch, best_acc, path='checkpoint_latest.pth')
             if (epoch + 1) % save_every == 0:
-                self.save_ckpt(epoch, best_acc, path=self._ckpt_name("epoch", epoch+1))
+                self.save_ckpt(epoch, best_acc, path=f'checkpoint_epoch{epoch+1}.pth')
 
             if epoch_train_acc >= self.target_accuracy:
                 with open('TRAINING_COMPLETE.txt', 'w') as f: f.write('done')
@@ -216,18 +208,16 @@ class OverfitTrainer:
         plt.ylim(0.9, 1.01); plt.title('Training Acc (Zoom)'); plt.grid(True); plt.legend()
         plt.tight_layout(); plt.savefig('overfit_training_curves.png', dpi=300, bbox_inches='tight')
         print("✅ 訓練曲線已保存: overfit_training_curves.png")
-    
+
     def save_model(self, filepath='best_cat_dog_model.pth'):
         torch.save({
             'model_state_dict': self.model.state_dict(),
             'class_names': self.class_names,
-            'arch': self.arch_name,
-            'model_architecture': self.arch_name,  # 兼容舊欄位
+            'model_architecture': 'resnet_overfit',
             'target_accuracy': self.target_accuracy,
             'training_type': 'overfitted_for_perfect_accuracy'
         }, filepath)
         print(f"🎯 模型已保存: {filepath}")
-
 
 def main():
     parser = argparse.ArgumentParser(description='分段續訓的貓狗分類器')
@@ -236,9 +226,11 @@ def main():
                         choices=['resnet18','resnet34','resnet50','resnet101'])
     parser.add_argument('--target-accuracy', type=float, default=1.0)
     parser.add_argument('--max-epochs', type=int, default=200)
+    # 續訓 + 存檔 + 牆鐘時間
     parser.add_argument('--resume', type=str, default='', help='checkpoint 路徑（續訓）')
     parser.add_argument('--save-every', type=int, default=5, help='每 N 個 epoch 固定存 checkpoint')
     parser.add_argument('--max-wall-min', type=int, default=330, help='本輪最多訓練分鐘數（<360）')
+    # dataloader / opt
     parser.add_argument('--batch-size', type=int, default=8)
     parser.add_argument('--num-workers', type=int, default=4)
     parser.add_argument('--lr', type=float, default=1e-5)
@@ -258,6 +250,7 @@ def main():
                                 resume_path=args.resume,
                                 save_every=args.save_every,
                                 max_wall_min=args.max_wall_min)
+    # 只有真正跑完這輪才存最終模型；若提前退出將以 checkpoint 接續
     if os.path.exists('TRAINING_COMPLETE.txt'):
         trainer.save_model('best_cat_dog_model.pth')
         print("\n🎉 訓練完成！你可以執行：python predict.py --model best_cat_dog_model.pth --evaluate-all")
