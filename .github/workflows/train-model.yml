@@ -35,7 +35,7 @@ jobs:
     - name: Download last checkpoint (if any)
       uses: dawidd6/action-download-artifact@v6
       with:
-        name: checkpoint_resnet18.pth
+        name: ckpt_resnet18_no_pre
         path: ckpt_in
         search_artifacts: true
         if_no_artifact_found: ignore
@@ -86,7 +86,7 @@ jobs:
     - name: Upload checkpoint for next run
       uses: actions/upload-artifact@v4
       with:
-        name: ckpt
+        name: ckpt_resnet18_no_pre
         path: |
           checkpoint_latest.pth
           checkpoint_epoch*.pth
