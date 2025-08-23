@@ -10,39 +10,36 @@ from collections import defaultdict
 class EnhancedCatDogPredictor:
     def __init__(self, model_path):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        
-        # 數據預處理（與訓練時相同的驗證預處理）
         self.transform = transforms.Compose([
             transforms.Resize(256),
             transforms.CenterCrop(224),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ])
-        
-        # 加載模型
         self.model = self.load_model(model_path)
+
+    def _build_resnet(self, arch: str):
+        if arch == 'resnet34':
+            m = models.resnet34(weights=None)
+        elif arch == 'resnet50':
+            m = models.resnet50(weights=None)
+        elif arch == 'resnet101':
+            m = models.resnet101(weights=None)
+        else:
+            m = models.resnet18(weights=None)
+        m.fc = nn.Linear(m.fc.in_features, 2)
+        return m
         
     def load_model(self, model_path):
-        """加載訓練好的模型"""
         print(f"正在加載模型: {model_path}")
-        
-        # 加載checkpoint
-        checkpoint = torch.load(model_path, map_location=self.device)
-        
-        # 創建模型架構
-        model = models.resnet18(pretrained=False)
-        num_ftrs = model.fc.in_features
-        model.fc = nn.Linear(num_ftrs, 2)  # 2個類別
-        
-        # 加載權重
-        model.load_state_dict(checkpoint['model_state_dict'])
-        model = model.to(self.device)
-        model.eval()
-        
-        self.class_names = checkpoint['class_names']
-        print(f"✅ 模型加載成功！類別: {self.class_names}")
+        ckpt = torch.load(model_path, map_location=self.device)
+        arch = ckpt.get('arch') or ckpt.get('model_architecture') or 'resnet18'
+        model = self._build_resnet(arch)
+        model.load_state_dict(ckpt['model_state_dict'])
+        model = model.to(self.device).eval()
+        self.class_names = ckpt['class_names']
+        print(f"✅ 模型加載成功！架構: {arch}，類別: {self.class_names}")
         print(f"🔧 使用設備: {self.device}")
-        
         return model
     
     def predict_single_image(self, image_path):
