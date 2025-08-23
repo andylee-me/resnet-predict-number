@@ -3,93 +3,59 @@ name: Train Cat-Dog Classifier
 on:
   push:
     branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
+  workflow_dispatch:
   schedule:
-    - cron: "0 */6 * * *"
-  workflow_dispatch:  # 允許手動觸發
+    - cron: '0 */6 * * *'
 
 jobs:
   train:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.9'
-        
+
     - name: Cache pip dependencies
       uses: actions/cache@v4
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-          
+        restore-keys: ${{ runner.os }}-pip-
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        
-    - name: Install additional tools
-      run: |
         pip install kaggle gdown
-        
-    # 選項1: 從 Kaggle 下載數據集
-    - name: Download dataset from Kaggle
-      env:
-        KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
-        KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+
+    # 下載上一輪的 ckpt（若沒有則忽略）
+    - name: Download last checkpoint (if any)
+      uses: dawidd6/action-download-artifact@v6
+      with:
+        name: ckpt
+        path: ckpt_in
+        search_artifacts: true
+        if_no_artifact_found: ignore
+        branch: claude-resnet34-no-pre-test  # 依你的主要分支調整
+        workflow_conclusion: completed
+
+
+    - name: Build RESUME_ARG
+      id: resume
       run: |
-        # 創建 Kaggle 配置目錄
-        mkdir -p ~/.kaggle
-        echo '{"username":"'$KAGGLE_USERNAME'","key":"'$KAGGLE_KEY'"}' > ~/.kaggle/kaggle.json
-        chmod 600 ~/.kaggle/kaggle.json
-        
-        # 下載並解壓數據集
-        echo "正在下載數據集..."
-        kaggle datasets download -d salader/dogs-vs-cats
-        
-        echo "正在解壓數據集..."
-        unzip -q dogs-vs-cats.zip -d ./temp_dataset/
-        
-        # 檢查下載的內容
-        echo "檢查下載的文件："
-        ls -la ./temp_dataset/
-        find ./temp_dataset/ -type f -name "*.zip" | head -5
-        
-        # 如果有額外的 zip 文件，繼續解壓
-        if [ -f "./temp_dataset/train.zip" ]; then
-          echo "找到 train.zip，正在解壓..."
-          unzip -q ./temp_dataset/train.zip -d ./temp_dataset/
+        if [ -f ckpt_in/checkpoint_latest.pth ]; then
+          echo "resume=--resume ckpt_in/checkpoint_latest.pth" >> $GITHUB_OUTPUT
+          echo "Found checkpoint_latest.pth, will resume."
+        else
+          echo "resume=" >> $GITHUB_OUTPUT
+          echo "No checkpoint found, start fresh."
         fi
-        
-        if [ -f "./temp_dataset/test1.zip" ]; then
-          echo "找到 test1.zip，正在解壓..."
-          unzip -q ./temp_dataset/test1.zip -d ./temp_dataset/
-        fi
-        
-        # 再次檢查結構
-        echo "解壓後的文件結構："
-        find ./temp_dataset/ -type d | head -10
-        find ./temp_dataset/ -name "*.jpg" | head -5
-        
-        # 創建目標目錄結構
-        mkdir -p kaggle_cats_vs_dogs_f/train/cat
-        mkdir -p kaggle_cats_vs_dogs_f/train/dog  
-        mkdir -p kaggle_cats_vs_dogs_f/val/cat
-        mkdir -p kaggle_cats_vs_dogs_f/val/dog
-        
-        # 運行數據準備腳本
-        echo "正在整理數據集..."
-        python scripts/prepare_dataset.py ./temp_dataset/
-        
-      if: env.KAGGLE_USERNAME != '' && env.KAGGLE_KEY != ''
-        
+
     # 選項2: 從 Google Drive 下載數據集 (備用選項)
     - name: Download dataset from Google Drive
       run: |
@@ -99,42 +65,52 @@ jobs:
         echo "✅ 解壓完成，資料放在 file/ 資料夾內"
       if: env.KAGGLE_USERNAME == '' || env.KAGGLE_KEY == ''
 
-        
+    # 你現有的資料下載＆整理（略）
+
     - name: Verify dataset structure
       run: |
         echo "檢查數據集結構..."
-        ls -la file/kaggle_cats_vs_dogs_f/
-        echo "訓練集:"
-        ls -la file/kaggle_cats_vs_dogs_f/train/
-        echo "驗證集:"
-        ls -la file/kaggle_cats_vs_dogs_f/val/
-        
-        # 計算文件數量
-        echo "訓練集貓咪圖片數量: $(find file/kaggle_cats_vs_dogs_f/train/cat -name "*.jpg" | wc -l)"
-        echo "訓練集狗狗圖片數量: $(find file/kaggle_cats_vs_dogs_f/train/dog -name "*.jpg" | wc -l)"
-        echo "驗證集貓咪圖片數量: $(find file/kaggle_cats_vs_dogs_f/val/cat -name "*.jpg" | wc -l)"
-        echo "驗證集狗狗圖片數量: $(find file/kaggle_cats_vs_dogs_f/val/dog -name "*.jpg" | wc -l)"
-        
-    - name: Train model
+        ls -la file/kaggle_cats_vs_dogs_f/ || true
+        ls -la file/kaggle_cats_vs_dogs_f/train/ || true
+        ls -la file/kaggle_cats_vs_dogs_f/val/ || true
+
+    - name: Train model (auto-stop before 6h)
       run: |
         echo "開始訓練模型..."
-        python train_model.py
-        
-    - name: Test model predictions
+        python train_model.py \
+          --data-dir file/kaggle_cats_vs_dogs_f \
+          --architecture resnet34 \
+          --max-epochs 200 \
+          --save-every 5 \
+          --max-wall-min 330 \
+          ${{ steps.resume.outputs.resume }}
+
+    - name: Upload checkpoint for next run
+      uses: actions/upload-artifact@v4
+      with:
+        name: ckpt
+        path: |
+          checkpoint_latest.pth
+          checkpoint_epoch*.pth
+          checkpoint_best.pth
+          TRAINING_COMPLETE.txt
+          NEED_MORE.txt
+        retention-days: 14
+
+    # 僅在最終模型存在時才做測試與釋出
+    - name: Test model predictions (val)
+      if: ${{ hashFiles('best_cat_dog_model.pth') != '' }}
       run: |
-        echo "測試模型預測..."
-        # 創建測試圖片目錄
+        echo "測試模型預測（val）..."
         mkdir -p test_images
-        
-        # 複製一些驗證圖片用於測試
         cp file/kaggle_cats_vs_dogs_f/val/cat/*.jpg test_images/ 2>/dev/null || true
         cp file/kaggle_cats_vs_dogs_f/val/dog/*.jpg test_images/ 2>/dev/null || true
-        
-        # 進行批次預測測試
         python predict.py --model best_cat_dog_model.pth --folder test_images/
 
+  
 
     - name: Test model's train predictions
+      if: ${{ hashFiles('best_cat_dog_model.pth') != '' }}
       run: |
         echo "測試模型預測..."
         # 創建測試圖片目錄
@@ -147,81 +123,13 @@ jobs:
         # 進行批次預測測試
         python predict_train.py --model best_cat_dog_model.pth --folder test_images/
         
-    - name: Generate model summary
-      run: |
-        echo "生成模型摘要..."
-        python -c "
-        import torch
-        import os
-        
-        if os.path.exists('best_cat_dog_model.pth'):
-            checkpoint = torch.load('best_cat_dog_model.pth', map_location='cpu')
-            print(f'模型類別: {checkpoint[\"class_names\"]}')
-            print(f'模型架構: {checkpoint[\"model_architecture\"]}')
-            
-            # 計算模型大小
-            model_size = os.path.getsize('best_cat_dog_model.pth') / (1024*1024)
-            print(f'模型大小: {model_size:.2f} MB')
-        else:
-            print('未找到訓練好的模型文件')
-        "
-        
+
     - name: Upload trained model
+      if: ${{ hashFiles('best_cat_dog_model.pth') != '' }}
       uses: actions/upload-artifact@v4
       with:
         name: trained-cat-dog-model
         path: |
           best_cat_dog_model.pth
-          training_curves.png
+          overfit_training_curves.png
         retention-days: 30
-        
-    - name: Upload training logs
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: training-logs
-        path: |
-          *.log
-          *.txt
-        retention-days: 7
-
-  deploy:
-    needs: train
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      
-    - name: Download trained model
-      uses: actions/download-artifact@v4
-      with:
-        name: trained-cat-dog-model
-        path: ./models/
-        
-    - name: Create release
-      if: success()
-      uses: softprops/action-gh-release@v2
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: model-v${{ github.run_number }}
-        name: Cat-Dog Classifier Model v${{ github.run_number }}
-        body: |
-          🐱🐶 自動訓練的貓狗分類器模型
-          
-          **訓練信息:**
-          - 模型架構: ResNet18
-          - 訓練時間: ${{ github.run_started_at }}
-          - Commit: ${{ github.sha }}
-          
-          **使用方法:**
-          ```bash
-          python predict.py --model best_cat_dog_model.pth --image your_image.jpg
-          ```
-        files: |
-          ./models/best_cat_dog_model.pth
-          ./models/training_curves.png
-        draft: false
-        prerelease: false
