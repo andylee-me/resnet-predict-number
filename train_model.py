@@ -86,20 +86,16 @@ class OverfitTrainer:
         print("✅ 模型已構建，所有層均可訓練")
 
     # ---------- Checkpoint I/O ----------
-    def save_ckpt(self, epoch, best_acc, path=None):
-        if path is None:
-            path = f"checkpoint_{self.arch_name}.pth"
+    def save_ckpt(self, epoch, best_acc, path='checkpoint_latest.pth'):
         state = {
             'epoch': epoch,
             'model_state': self.model.state_dict(),
             'optimizer_state': self.optimizer.state_dict(),
             'best_acc': float(best_acc),
             'class_names': self.class_names,
-            'arch': getattr(self, 'arch_name', 'resnet18'),
         }
         torch.save(state, path)
         print(f'💾 已保存 checkpoint: {path} (epoch={epoch+1})')
-
 
     def load_ckpt(self, path):
         ckpt = torch.load(path, map_location=self.device)
