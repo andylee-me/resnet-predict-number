@@ -83,6 +83,7 @@ class OverfitTrainer:
         for p in self.model.parameters(): p.requires_grad = True
         self.model = self.model.to(self.device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr, weight_decay=weight_decay)
+        self.arch_name = architecture  # ← 記住本次訓練的架構名稱
         print("✅ 模型已構建，所有層均可訓練")
 
     # ---------- Checkpoint I/O ----------
@@ -93,9 +94,11 @@ class OverfitTrainer:
             'optimizer_state': self.optimizer.state_dict(),
             'best_acc': float(best_acc),
             'class_names': self.class_names,
+            'arch': getattr(self, 'arch_name', 'resnet18'),  # ← 新增
         }
         torch.save(state, path)
         print(f'💾 已保存 checkpoint: {path} (epoch={epoch+1})')
+
 
     def load_ckpt(self, path):
         ckpt = torch.load(path, map_location=self.device)
@@ -208,16 +211,18 @@ class OverfitTrainer:
         plt.ylim(0.9, 1.01); plt.title('Training Acc (Zoom)'); plt.grid(True); plt.legend()
         plt.tight_layout(); plt.savefig('overfit_training_curves.png', dpi=300, bbox_inches='tight')
         print("✅ 訓練曲線已保存: overfit_training_curves.png")
-
+    
     def save_model(self, filepath='best_cat_dog_model.pth'):
         torch.save({
             'model_state_dict': self.model.state_dict(),
             'class_names': self.class_names,
-            'model_architecture': 'resnet_overfit',
+            'arch': getattr(self, 'arch_name', 'resnet18'),      # ← 新增
+            'model_architecture': getattr(self, 'arch_name', ''),# 兼容舊欄位名
             'target_accuracy': self.target_accuracy,
             'training_type': 'overfitted_for_perfect_accuracy'
         }, filepath)
         print(f"🎯 模型已保存: {filepath}")
+
 
 def main():
     parser = argparse.ArgumentParser(description='分段續訓的貓狗分類器')
