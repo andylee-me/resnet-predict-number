@@ -4,8 +4,6 @@ on:
   push:
     branches: [ main, develop ]
   workflow_dispatch:
-  schedule:
-    - cron: '0 */6 * * *'
 
 jobs:
   train:
@@ -41,7 +39,7 @@ jobs:
         path: ckpt_in
         search_artifacts: true
         if_no_artifact_found: ignore
-        branch: claude-resnet34-no-pre-test  # 依你的主要分支調整
+        branch: claude-resnet18-no-pre-test  # 依你的主要分支調整
         workflow_conclusion: completed
 
 
