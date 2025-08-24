@@ -70,14 +70,16 @@ class OverfitTrainer:
 
     def build_model(self, architecture='resnet18', lr=1e-5, weight_decay=0.0):
         print(f"🏗️ 正在構建模型: {architecture} (pretrained=False)")
+        self.arch_name = architecture  # ← 記住這次訓練的架構
+
         if architecture == 'resnet50':
-            self.model = models.resnet50(pretrained=False)
+            self.model = models.resnet50(weights=None)
         elif architecture == 'resnet101':
-            self.model = models.resnet101(pretrained=False)
+            self.model = models.resnet101(weights=None)
         elif architecture == 'resnet18':
-            self.model = models.resnet18(pretrained=False)
+            self.model = models.resnet18(weights=None)
         else:
-            self.model = models.resnet34(pretrained=False)
+            self.model = models.resnet34(weights=None)
         num_ftrs = self.model.fc.in_features
         self.model.fc = nn.Linear(num_ftrs, 2)
         for p in self.model.parameters(): p.requires_grad = True
@@ -213,7 +215,8 @@ class OverfitTrainer:
         torch.save({
             'model_state_dict': self.model.state_dict(),
             'class_names': self.class_names,
-            'model_architecture': 'resnet_overfit',
+            'arch': getattr(self, 'arch_name', 'resnet18'),          # ← 新增：存真正的架構
+            'model_architecture': getattr(self, 'arch_name', ''),    # 兼容舊欄位名
             'target_accuracy': self.target_accuracy,
             'training_type': 'overfitted_for_perfect_accuracy'
         }, filepath)
