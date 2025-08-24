@@ -7,42 +7,61 @@ import os
 import time
 from collections import defaultdict
 
+
+def _build_resnet(arch_name: str):
+    arch_name = (arch_name or "resnet18").lower()
+    if arch_name == "resnet18":
+        m = models.resnet18(weights=None)
+    elif arch_name == "resnet34":
+        m = models.resnet34(weights=None)
+    elif arch_name == "resnet50":
+        m = models.resnet50(weights=None)
+    elif arch_name == "resnet101":
+        m = models.resnet101(weights=None)
+    else:
+        raise ValueError(f"Unsupported arch in checkpoint: {arch_name}")
+    num_ftrs = m.fc.in_features
+    m.fc = nn.Linear(num_ftrs, 2)
+    return m
+
+
+
+
 class EnhancedCatDogPredictor:
     def __init__(self, model_path):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        
-        # 數據預處理（與訓練時相同的驗證預處理）
         self.transform = transforms.Compose([
             transforms.Resize(256),
             transforms.CenterCrop(224),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ])
-        
-        # 加載模型
         self.model = self.load_model(model_path)
         
     def load_model(self, model_path):
-        """加載訓練好的模型"""
         print(f"正在加載模型: {model_path}")
-        
-        # 加載checkpoint
-        checkpoint = torch.load(model_path, map_location=self.device)
-        
-        # 創建模型架構
-        model = models.resnet18(pretrained=False)
-        num_ftrs = model.fc.in_features
-        model.fc = nn.Linear(num_ftrs, 2)  # 2個類別
-        
-        # 加載權重
-        model.load_state_dict(checkpoint['model_state_dict'])
-        model = model.to(self.device)
+        ckpt = torch.load(model_path, map_location=self.device)
+
+        # 從 checkpoint 讀出架構（優先 arch，備援 model_architecture）
+        arch = ckpt.get("arch") or ckpt.get("model_architecture") or "resnet18"
+        print(f"🔎 檢測到 checkpoint 架構: {arch}")
+
+        model = _build_resnet(arch).to(self.device)
+
+        # 權重欄位名稱兼容
+        state = ckpt.get("model_state_dict") or ckpt.get("model_state")
+        if state is None:
+            raise RuntimeError("Checkpoint 缺少 model_state_dict/model_state 欄位")
+
+        missing, unexpected = model.load_state_dict(state, strict=False)
+        if unexpected:
+            print(f"⚠️ Unexpected keys: {unexpected}")
+        if missing:
+            print(f"⚠️ Missing keys: {missing}")
+
         model.eval()
-        
-        self.class_names = checkpoint['class_names']
-        print(f"✅ 模型加載成功！類別: {self.class_names}")
-        print(f"🔧 使用設備: {self.device}")
-        
+        self.class_names = ckpt.get("class_names", ["cat", "dog"])
+        print(f"✅ 模型加載成功！類別: {self.class_names}，架構: {arch}，設備: {self.device}")
         return model
     
     def predict_single_image(self, image_path):
