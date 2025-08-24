@@ -2,10 +2,9 @@ name: Train Cat-Dog Classifier
 
 on:
   push:
-    branches: [ main, develop ]
   workflow_dispatch:
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '* 2,8,14,20 * * *'
 
 jobs:
   train:
