@@ -80,7 +80,7 @@ jobs:
         python train_model.py \
           --data-dir file/kaggle_cats_vs_dogs_f \
           --architecture resnet18 \
-          --max-epochs 200 \
+          --max-epochs 500 \
           --save-every 5 \
           --max-wall-min 330 \
           ${{ steps.resume.outputs.resume }}
