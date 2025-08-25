@@ -39,7 +39,9 @@ jobs:
     - name: Download last checkpoint (if any)
       uses: dawidd6/action-download-artifact@v6
       with:
-        name: ckpt_resnet18_no_pre
+        ################################################################
+        name: ckpt_resnet18_no_pre_2
+        ################################################################
         path: ckpt_in
         search_artifacts: true
         if_no_artifact_found: ignore
@@ -86,7 +88,9 @@ jobs:
     - name: Upload checkpoint for next run
       uses: actions/upload-artifact@v4
       with:
-        name: ckpt_resnet18_no_pre                  # 與下載步驟同名 → 方便續跑
+        ################################################################
+        name: ckpt_resnet18_no_pre_2                  # 與下載步驟同名 → 方便續跑
+        ################################################################
         path: |
           checkpoint_latest.pth
           checkpoint_epoch*.pth
