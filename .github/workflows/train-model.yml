@@ -1,6 +1,6 @@
 name: Train Cat-Dog Classifier
 
-on:
+on: 
   push:
     branches: [ claude-resnet18-no-pre-test ]   # 只在這個分支 push 時觸發
   workflow_dispatch:                             # 手動觸發
