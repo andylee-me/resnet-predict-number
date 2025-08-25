@@ -110,7 +110,7 @@ class OverfitTrainer:
         return start_epoch, best_acc
 
     # ---------- Train ----------
-    def train_to_perfection(self, max_epochs=200, resume_path='', save_every=5, max_wall_min=330):
+    def train_to_perfection(self, max_epochs=500, resume_path='', save_every=5, max_wall_min=330):
         print(f"🚀 開始訓練到 {self.target_accuracy*100:.1f}% 準確率（最多 {max_epochs} epochs）")
         print("=" * 60)
 
@@ -228,7 +228,7 @@ def main():
     parser.add_argument('--architecture', type=str, default='resnet18',
                         choices=['resnet18','resnet34','resnet50','resnet101'])
     parser.add_argument('--target-accuracy', type=float, default=1.0)
-    parser.add_argument('--max-epochs', type=int, default=200)
+    parser.add_argument('--max-epochs', type=int, default=500)
     # 續訓 + 存檔 + 牆鐘時間
     parser.add_argument('--resume', type=str, default='', help='checkpoint 路徑（續訓）')
     parser.add_argument('--save-every', type=int, default=5, help='每 N 個 epoch 固定存 checkpoint')
