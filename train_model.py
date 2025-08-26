@@ -78,7 +78,7 @@ class OverfitTrainer:
             num_ftrs = self.model.fc.in_features
             self.model.fc = nn.Linear(num_ftrs, 2)
         elif architecture == 'resnet101':
-            self.model = models.resnet101(pretrained=True)
+            self.model = models.resnet101(pretrained=False)
             num_ftrs = self.model.fc.in_features
             self.model.fc = nn.Linear(num_ftrs, 2)
         elif architecture == 'resnet34':
