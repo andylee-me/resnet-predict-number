@@ -4,9 +4,9 @@ on:
   push:
     # 只有這些分支推送時會觸發
     branches:
-      - claude-resnet50-pre-test
+      - claude-resnet50-pre
       - claude-resnet50-no-pre-test
-      - claude-resnet101-pre-test
+      - claude-resnet101-pre
       - claude-resnet101-no-pre-test
       
   workflow_dispatch: {}   # 手動觸發
@@ -21,9 +21,9 @@ jobs:
       matrix:
         # 在這裡列出要自動跑的分支清單（排程 & 手動觸發時會全部跑一輪）
         branch:
-        - claude-resnet50-pre-test
+        - claude-resnet50-pre
         - claude-resnet50-no-pre-test
-        - claude-resnet101-pre-test
+        - claude-resnet101-pre
         - claude-resnet101-no-pre-test
 
     steps:
