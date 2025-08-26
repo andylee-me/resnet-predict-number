@@ -1,36 +1,37 @@
 #!/usr/bin/env python3
 """
-專門用於達到100%訓練準確率的訓練腳本
-通過使用更大模型、更小學習率、更多訓練輪數來實現完全過擬合
+分段續訓 + 牆鐘時間保護版
+- --resume 從上次 checkpoint 接續
+- --save-every 每 N 個 epoch 固定存檔，且每輪都覆蓋 checkpoint_latest.pth
+- --max-wall-min 逼近 6h 前自動保存並優雅退出，避免 GH Actions 被強殺
 """
 
-import torch
-import torch.nn as nn
-import torch.optim as optim
+import torch, torch.nn as nn, torch.optim as optim
 from torch.utils.data import DataLoader
-import torchvision
 from torchvision import datasets, transforms, models
-import argparse
-import os
-import time
-import copy
-import matplotlib.pyplot as plt
-import numpy as np
+import argparse, os, time, copy, matplotlib.pyplot as plt, numpy as np
 
 class OverfitTrainer:
     def __init__(self, data_dir, target_accuracy=1.0):
         self.data_dir = data_dir
         self.target_accuracy = target_accuracy
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        elif torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+        else:
+            self.device = torch.device("cpu")
+
         print(f"🎯 目標訓練準確率: {target_accuracy*100:.1f}%")
         print(f"🔧 使用設備: {self.device}")
-        
-        # 針對過擬合的數據變換（減少隨機性）
+
+        torch.manual_seed(42); np.random.seed(42)
+
+        # 減少隨機性以利過擬合
         self.data_transforms = {
             'train': transforms.Compose([
                 transforms.Resize(256),
-                transforms.CenterCrop(224),  # 使用中心裁剪而非隨機裁剪
+                transforms.CenterCrop(224),
                 transforms.ToTensor(),
                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ]),
@@ -41,262 +42,217 @@ class OverfitTrainer:
                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ]),
         }
-        
+
         self.model = None
         self.optimizer = None
         self.criterion = nn.CrossEntropyLoss()
-        self.dataloaders = {}
-        self.dataset_sizes = {}
-        self.class_names = []
-        
-    def load_data(self):
-        """加載數據"""
+        self.dataloaders, self.dataset_sizes, self.class_names = {}, {}, []
+
+    def load_data(self, batch_size=8, num_workers=4):
         print("📂 正在加載數據...")
-        
-        image_datasets = {x: datasets.ImageFolder(os.path.join(self.data_dir, x),
-                                                self.data_transforms[x])
-                         for x in ['train', 'val']}
-        
-        # 使用較小的batch size以獲得更精確的梯度
-        self.dataloaders = {x: DataLoader(image_datasets[x], batch_size=8,
-                                        shuffle=(x == 'train'), num_workers=4)
-                          for x in ['train', 'val']}
-        
+        image_datasets = {
+            x: datasets.ImageFolder(os.path.join(self.data_dir, x), self.data_transforms[x])
+            for x in ['train', 'val']
+        }
+        self.dataloaders = {
+            'train': DataLoader(image_datasets['train'], batch_size=batch_size, shuffle=True,
+                                num_workers=num_workers, pin_memory=(self.device.type=="cuda"),
+                                persistent_workers=(num_workers>0)),
+            'val': DataLoader(image_datasets['val'], batch_size=batch_size, shuffle=False,
+                              num_workers=num_workers, pin_memory=(self.device.type=="cuda"),
+                              persistent_workers=(num_workers>0))
+        }
         self.dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val']}
         self.class_names = image_datasets['train'].classes
-        
         print(f"✅ 訓練集大小: {self.dataset_sizes['train']}")
         print(f"✅ 驗證集大小: {self.dataset_sizes['val']}")
         print(f"✅ 類別: {self.class_names}")
-        
-    def build_model(self, architecture='resnet101'):
-        """構建更大容量的模型"""
-        print(f"🏗️ 正在構建模型: {architecture}")
-        
+
+    def build_model(self, architecture='resnet101', lr=1e-5, weight_decay=0.0):
+        print(f"🏗️ 正在構建模型: {architecture} (pretrained=False)")
         if architecture == 'resnet50':
-            self.model = models.resnet50(pretrained=True)
-            num_ftrs = self.model.fc.in_features
-            self.model.fc = nn.Linear(num_ftrs, 2)
+            self.model = models.resnet50(pretrained=False)
         elif architecture == 'resnet101':
-            self.model = models.resnet101(pretrained=True)
-            num_ftrs = self.model.fc.in_features
-            self.model.fc = nn.Linear(num_ftrs, 2)
-        elif architecture == 'resnet34':
-            self.model = models.resnet34(pretrained=True)
-            num_ftrs = self.model.fc.in_features
-            self.model.fc = nn.Linear(num_ftrs, 2)
-        else:  # resnet18
-            self.model = models.resnet18(pretrained=True)
-            num_ftrs = self.model.fc.in_features
-            self.model.fc = nn.Linear(num_ftrs, 2)
-        
-        # 解凍所有層進行訓練（不凍結任何層）
-        for param in self.model.parameters():
-            param.requires_grad = True
-        
+            self.model = models.resnet101(pretrained=False)
+        elif architecture == 'resnet18':
+            self.model = models.resnet18(pretrained=False)
+        else:
+            self.model = models.resnet34(pretrained=False)
+        num_ftrs = self.model.fc.in_features
+        self.model.fc = nn.Linear(num_ftrs, 2)
+        for p in self.model.parameters(): p.requires_grad = True
         self.model = self.model.to(self.device)
-        
-        # 使用非常小的學習率以實現精確擬合
-        self.optimizer = optim.Adam(self.model.parameters(), lr=0.00001, weight_decay=0.0)
-        
-        print(f"✅ 模型已構建，所有層均可訓練")
-        
-    def train_to_perfection(self, max_epochs=200):
-        """訓練直到達到目標準確率"""
-        print(f"🚀 開始訓練到 {self.target_accuracy*100:.1f}% 準確率...")
-        print(f"🔄 最大訓練輪數: {max_epochs}")
+        self.optimizer = optim.Adam(self.model.parameters(), lr=lr, weight_decay=weight_decay)
+        print("✅ 模型已構建，所有層均可訓練")
+
+    # ---------- Checkpoint I/O ----------
+    def save_ckpt(self, epoch, best_acc, path='checkpoint_latest.pth'):
+        state = {
+            'epoch': epoch,
+            'model_state': self.model.state_dict(),
+            'optimizer_state': self.optimizer.state_dict(),
+            'best_acc': float(best_acc),
+            'class_names': self.class_names,
+        }
+        torch.save(state, path)
+        print(f'💾 已保存 checkpoint: {path} (epoch={epoch+1})')
+
+    def load_ckpt(self, path):
+        ckpt = torch.load(path, map_location=self.device)
+        self.model.load_state_dict(ckpt['model_state'])
+        self.optimizer.load_state_dict(ckpt['optimizer_state'])
+        start_epoch = int(ckpt.get('epoch', -1)) + 1
+        best_acc = float(ckpt.get('best_acc', 0.0))
+        if ckpt.get('class_names'): self.class_names = ckpt['class_names']
+        print(f'↩️ 讀取 checkpoint: {path}，從 epoch {start_epoch+1} 繼續（best_val_acc={best_acc:.4f}）')
+        return start_epoch, best_acc
+
+    # ---------- Train ----------
+    def train_to_perfection(self, max_epochs=200, resume_path='', save_every=5, max_wall_min=330):
+        print(f"🚀 開始訓練到 {self.target_accuracy*100:.1f}% 準確率（最多 {max_epochs} epochs）")
         print("=" * 60)
-        
+
         since = time.time()
-        best_model_wts = copy.deepcopy(self.model.state_dict())
         best_acc = 0.0
-        
-        train_losses = []
-        val_losses = []
-        train_accuracies = []
-        val_accuracies = []
-        
-        epochs_without_improvement = 0
-        max_patience = 30
-        
-        for epoch in range(max_epochs):
+        start_epoch = 0
+        if resume_path and os.path.exists(resume_path):
+            start_epoch, best_acc = self.load_ckpt(resume_path)
+
+        train_losses, val_losses, train_accuracies, val_accuracies = [], [], [], []
+        for epoch in range(start_epoch, max_epochs):
             print(f'Epoch {epoch+1}/{max_epochs}')
             print('-' * 40)
-            
-            # 每個epoch都有訓練和驗證階段
             epoch_train_acc = 0.0
-            epoch_val_acc = 0.0
-            
+
             for phase in ['train', 'val']:
-                if phase == 'train':
-                    self.model.train()
-                else:
-                    self.model.eval()
-                
-                running_loss = 0.0
-                running_corrects = 0
-                
-                # 遍歷數據
-                for inputs, labels in self.dataloaders[phase]:
-                    inputs = inputs.to(self.device)
-                    labels = labels.to(self.device)
-                    
-                    self.optimizer.zero_grad()
-                    
-                    with torch.set_grad_enabled(phase == 'train'):
-                        outputs = self.model(inputs)
-                        _, preds = torch.max(outputs, 1)
-                        loss = self.criterion(outputs, labels)
-                        
-                        if phase == 'train':
-                            loss.backward()
-                            self.optimizer.step()
-                    
+                is_train = (phase == 'train')
+                self.model.train(is_train)
+                running_loss, running_corrects = 0.0, 0
+
+                total_steps = len(self.dataloaders[phase])  # ← 新增：此階段總步數
+
+                # ====== 這段是改過的：加 enumerate 與進度輸出 ======
+                for bidx, (inputs, labels) in enumerate(self.dataloaders[phase]):
+                    # 牆鐘時間防護：每個 batch 都檢查
+                    if max_wall_min and (time.time() - since) / 60.0 > max_wall_min:
+                        self.save_ckpt(epoch, best_acc, path='checkpoint_latest.pth')
+                        with open('NEED_MORE.txt', 'w') as f: f.write('continue')
+                        print('⏱️ 達到本輪時間配額，已保存 ckpt，優雅退出以避免 6h 強制中斷。')
+                        return
+
+                    inputs = inputs.to(self.device, non_blocking=True)
+                    labels = labels.to(self.device, non_blocking=True)
+                    self.optimizer.zero_grad(set_to_none=True)
+
+                    outputs = self.model(inputs)
+                    _, preds = torch.max(outputs, 1)
+                    loss = self.criterion(outputs, labels)
+
+                    if is_train:
+                        loss.backward()
+                        self.optimizer.step()
+
                     running_loss += loss.item() * inputs.size(0)
-                    running_corrects += torch.sum(preds == labels.data)
-                
+                    running_corrects += torch.sum(preds == labels)
+
+                    # ← 新增：每 20 個 step 印一次進度（可自行調整頻率）
+                    if (bidx + 1) % 20 == 0 or (bidx + 1) == total_steps:
+                        done = (bidx + 1) * inputs.size(0)
+                        total = self.dataset_sizes[phase]
+                        print(f"  [{phase}] step {bidx+1}/{total_steps} "
+                              f"~{min(done, total)}/{total} samples",
+                              flush=True)
+                # ====== 到此為止 ======
+
                 epoch_loss = running_loss / self.dataset_sizes[phase]
                 epoch_acc = running_corrects.double() / self.dataset_sizes[phase]
-                
                 print(f'{phase} Loss: {epoch_loss:.6f} Acc: {epoch_acc:.4f} ({epoch_acc*100:.2f}%)')
-                
-                if phase == 'train':
+
+                if is_train:
                     train_losses.append(epoch_loss)
-                    train_accuracies.append(epoch_acc.cpu().numpy())
+                    train_accuracies.append(epoch_acc.item())
                     epoch_train_acc = epoch_acc
                 else:
                     val_losses.append(epoch_loss)
-                    val_accuracies.append(epoch_acc.cpu().numpy())
-                    epoch_val_acc = epoch_acc
-                
-                # 保存最佳模型
-                if phase == 'val' and epoch_acc > best_acc:
-                    best_acc = epoch_acc
-                    best_model_wts = copy.deepcopy(self.model.state_dict())
-                    epochs_without_improvement = 0
-                elif phase == 'val':
-                    epochs_without_improvement += 1
-            
-            # 檢查是否達到目標訓練準確率
+                    val_accuracies.append(epoch_acc.item())
+                    if epoch_acc > best_acc:
+                        best_acc = epoch_acc
+                        self.save_ckpt(epoch, best_acc, path='checkpoint_best.pth')
+
+
+            # 每個 epoch 結束都覆蓋 latest；也可定期固存
+            self.save_ckpt(epoch, best_acc, path='checkpoint_latest.pth')
+            if (epoch + 1) % save_every == 0:
+                self.save_ckpt(epoch, best_acc, path=f'checkpoint_epoch{epoch+1}.pth')
+
             if epoch_train_acc >= self.target_accuracy:
-                print(f"\n🎉 達到目標訓練準確率 {self.target_accuracy*100:.1f}%！")
-                print(f"實際訓練準確率: {epoch_train_acc*100:.2f}%")
-                print(f"在第 {epoch+1} 輪達成目標")
+                with open('TRAINING_COMPLETE.txt', 'w') as f: f.write('done')
+                print(f"\n🎉 達到目標訓練準確率 {self.target_accuracy*100:.1f}%！在第 {epoch+1} 輪")
                 break
-            
-            # 早停機制（但主要關注訓練準確率）
-            if epochs_without_improvement >= max_patience:
-                print(f"\n⏰ 驗證準確率 {max_patience} 輪無改善，但繼續追求訓練準確率...")
-                # 不停止訓練，繼續追求100%訓練準確率
-            
             print()
-        
-        time_elapsed = time.time() - since
-        print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s')
-        print(f'Best val Acc: {best_acc:4f}')
-        
-        # 如果沒有達到目標，使用當前模型
-        if epoch_train_acc < self.target_accuracy:
-            print(f"⚠️ 未完全達到目標，最終訓練準確率: {epoch_train_acc*100:.2f}%")
-            self.model.load_state_dict(self.model.state_dict())  # 使用最後的模型
-        else:
-            self.model.load_state_dict(self.model.state_dict())  # 使用達成目標的模型
-        
-        # 繪製訓練曲線
+
+        elapsed = time.time() - since
+        print(f'⏱️ 訓練耗時: {elapsed // 60:.0f}m {elapsed % 60:.0f}s')
+        print(f'🏅 最佳驗證準確率: {best_acc:.4f}')
         self.plot_training_curves(train_losses, val_losses, train_accuracies, val_accuracies)
-        
-        return self.model
-    
+
     def plot_training_curves(self, train_losses, val_losses, train_accs, val_accs):
-        """繪製訓練曲線"""
         plt.figure(figsize=(15, 5))
-        
-        plt.subplot(1, 3, 1)
-        plt.plot(train_losses, label='Train Loss', color='blue')
-        plt.plot(val_losses, label='Val Loss', color='red')
-        plt.xlabel('Epoch')
-        plt.ylabel('Loss')
-        plt.legend()
-        plt.title('Training and Validation Loss')
-        plt.grid(True)
-        
-        plt.subplot(1, 3, 2)
-        plt.plot(train_accs, label='Train Acc', color='blue')
-        plt.plot(val_accs, label='Val Acc', color='red')
-        plt.axhline(y=self.target_accuracy, color='green', linestyle='--', label=f'Target ({self.target_accuracy*100:.0f}%)')
-        plt.xlabel('Epoch')
-        plt.ylabel('Accuracy')
-        plt.legend()
-        plt.title('Training and Validation Accuracy')
-        plt.grid(True)
-        
-        plt.subplot(1, 3, 3)
-        # 放大訓練準確率曲線
-        plt.plot(train_accs, label='Train Acc', color='blue', linewidth=2)
-        plt.axhline(y=self.target_accuracy, color='green', linestyle='--', label=f'Target ({self.target_accuracy*100:.0f}%)')
-        plt.xlabel('Epoch')
-        plt.ylabel('Training Accuracy')
-        plt.ylim(0.9, 1.01)  # 放大到90%-100%區間
-        plt.legend()
-        plt.title('Training Accuracy (Zoomed)')
-        plt.grid(True)
-        
-        plt.tight_layout()
-        plt.savefig('overfit_training_curves.png', dpi=300, bbox_inches='tight')
-        print(f"✅ 訓練曲線已保存到: overfit_training_curves.png")
-        plt.show()
-    
-    def save_model(self, filepath='perfect_cat_dog_model.pth'):
-        """保存達到100%準確率的模型"""
+        plt.subplot(1, 3, 1); plt.plot(train_losses,label='Train'); plt.plot(val_losses,label='Val')
+        plt.title('Loss'); plt.xlabel('Epoch'); plt.grid(True); plt.legend()
+        plt.subplot(1, 3, 2); plt.plot(train_accs,label='Train'); plt.plot(val_accs,label='Val')
+        plt.axhline(y=self.target_accuracy, color='g', ls='--', label='Target')
+        plt.title('Accuracy'); plt.xlabel('Epoch'); plt.grid(True); plt.legend()
+        plt.subplot(1, 3, 3); plt.plot(train_accs, lw=2, label='Train')
+        plt.axhline(y=self.target_accuracy, color='g', ls='--', label='Target')
+        plt.ylim(0.9, 1.01); plt.title('Training Acc (Zoom)'); plt.grid(True); plt.legend()
+        plt.tight_layout(); plt.savefig('overfit_training_curves.png', dpi=300, bbox_inches='tight')
+        print("✅ 訓練曲線已保存: overfit_training_curves.png")
+
+    def save_model(self, filepath='best_cat_dog_model.pth'):
         torch.save({
             'model_state_dict': self.model.state_dict(),
             'class_names': self.class_names,
-            'model_architecture': 'resnet50_overfitted',
+            'model_architecture': 'resnet_overfit',
             'target_accuracy': self.target_accuracy,
             'training_type': 'overfitted_for_perfect_accuracy'
         }, filepath)
-        print(f"🎯 完美擬合模型已保存到: {filepath}")
+        print(f"🎯 模型已保存: {filepath}")
 
 def main():
-    parser = argparse.ArgumentParser(description='訓練100%準確率的貓狗分類器')
-    parser.add_argument('--data-dir', type=str, default='file/kaggle_cats_vs_dogs_f',
-                       help='數據集路徑')
+    parser = argparse.ArgumentParser(description='分段續訓的貓狗分類器')
+    parser.add_argument('--data-dir', type=str, default='file/kaggle_cats_vs_dogs_f')
     parser.add_argument('--architecture', type=str, default='resnet101',
-                       choices=['resnet18', 'resnet34', 'resnet50', 'resnet101'],
-                       help='模型架構')
-    parser.add_argument('--target-accuracy', type=float, default=1.0,
-                       help='目標訓練準確率 (0.0-1.0)')
-    parser.add_argument('--max-epochs', type=int, default=200,
-                       help='最大訓練輪數')
-    
+                        choices=['resnet18','resnet34','resnet50','resnet101'])
+    parser.add_argument('--target-accuracy', type=float, default=1.0)
+    parser.add_argument('--max-epochs', type=int, default=200)
+    # 續訓 + 存檔 + 牆鐘時間
+    parser.add_argument('--resume', type=str, default='', help='checkpoint 路徑（續訓）')
+    parser.add_argument('--save-every', type=int, default=5, help='每 N 個 epoch 固定存 checkpoint')
+    parser.add_argument('--max-wall-min', type=int, default=330, help='本輪最多訓練分鐘數（<360）')
+    # dataloader / opt
+    parser.add_argument('--batch-size', type=int, default=8)
+    parser.add_argument('--num-workers', type=int, default=4)
+    parser.add_argument('--lr', type=float, default=1e-5)
+    parser.add_argument('--weight-decay', type=float, default=0.0)
     args = parser.parse_args()
-    
-    # 檢查數據路徑
+
     if not os.path.exists(args.data_dir):
         print(f"❌ 找不到數據路徑: {args.data_dir}")
         return
-    
+
     print("🎯 100% 訓練準確率專用訓練器")
     print("=" * 50)
-    print(f"📂 數據路徑: {args.data_dir}")
-    print(f"🏗️ 模型架構: {args.architecture}")
-    print(f"🎯 目標準確率: {args.target_accuracy*100:.1f}%")
-    print(f"🔄 最大輪數: {args.max_epochs}")
-    
-    # 創建訓練器
     trainer = OverfitTrainer(args.data_dir, args.target_accuracy)
-    
-    # 訓練流程
-    trainer.load_data()
-    trainer.build_model(args.architecture)
-    trainer.train_to_perfection(args.max_epochs)
-    trainer.save_model('best_cat_dog_model.pth')
-    
-    print("\n🎉 訓練完成！")
-    print("\n📋 接下來你可以:")
-    print("1. 使用 python predict.py --model perfect_cat_dog_model.pth --evaluate-train")
-    print("2. 驗證是否達到 100% 訓練準確率")
+    trainer.load_data(batch_size=args.batch_size, num_workers=args.num_workers)
+    trainer.build_model(args.architecture, lr=args.lr, weight_decay=args.weight_decay)
+    trainer.train_to_perfection(max_epochs=args.max_epochs,
+                                resume_path=args.resume,
+                                save_every=args.save_every,
+                                max_wall_min=args.max_wall_min)
+    # 只有真正跑完這輪才存最終模型；若提前退出將以 checkpoint 接續
+    if os.path.exists('TRAINING_COMPLETE.txt'):
+        trainer.save_model('best_cat_dog_model.pth')
+        print("\n🎉 訓練完成！你可以執行：python predict.py --model best_cat_dog_model.pth --evaluate-all")
+
 main()
-
-
-
