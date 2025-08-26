@@ -1,21 +1,36 @@
 name: Train Cat-Dog Classifier
 
-on: 
+on:
   push:
-    branches: [ claude-resnet18-no-pre-test ]   # 只在這個分支 push 時觸發
-  workflow_dispatch:                             # 手動觸發
+    # 只有這些分支推送時會觸發
+    branches:
+      - claude-resnet50-pre-test
+      - claude-resnet50-no-pre-test
+      - claude-resnet101-pre-test
+      - claude-resnet101-no-pre-test
+      
+  workflow_dispatch: {}   # 手動觸發
   schedule:
-    - cron: '0 */6 * * *'                        # 每 6 小時（UTC）跑一次
+    - cron: '0 */6 * * *' # 每 6 小時（UTC）跑一次；會在預設分支觸發，但我們用 matrix 跑多分支
 
 jobs:
   train:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 在這裡列出要自動跑的分支清單（排程 & 手動觸發時會全部跑一輪）
+        branch:
+        - claude-resnet50-pre-test
+        - claude-resnet50-no-pre-test
+        - claude-resnet101-pre-test
+        - claude-resnet101-no-pre-test
 
     steps:
     - name: Checkout target branch
       uses: actions/checkout@v4
       with:
-        ref: claude-resnet18-no-pre-test         # ★ 固定 checkout 目標分支的程式碼
+        ref: ${{ matrix.branch }}
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -35,18 +50,22 @@ jobs:
         pip install -r requirements.txt
         pip install kaggle gdown
 
-    # 下載上一輪的 ckpt（若沒有則忽略）
+    # 產生乾淨的 artifact 名稱（把分支名中的奇怪字元轉成底線）
+    - name: Normalize branch name for artifact names
+      id: names
+      run: |
+        SAFE="$(echo '${{ matrix.branch }}' | sed -e 's/[^A-Za-z0-9._-]/_/g')"
+        echo "safe=$SAFE" >> $GITHUB_OUTPUT
+        echo "CKPT_NAME=ckpt_${SAFE}" >> $GITHUB_ENV
+
+    # 從先前 run 把相同分支的 checkpoint 抓回來（若沒有就忽略）
     - name: Download last checkpoint (if any)
       uses: dawidd6/action-download-artifact@v6
       with:
-        ################################################################
-        name: ckpt_resnet18_no_pre_2
-        ################################################################
+        name: ${{ env.CKPT_NAME }}
         path: ckpt_in
         search_artifacts: true
         if_no_artifact_found: ignore
-        # 注意：schedule 總是在預設分支觸發；這裡不用填 branch，
-        # 讓 action 幫你跨 run 搜尋同名 artifact（我們有命名唯一前綴）
         workflow_conclusion: completed
 
     - name: Build RESUME_ARG
@@ -60,7 +79,27 @@ jobs:
           echo "No checkpoint found, start fresh."
         fi
 
-    - name: Download dataset (GDrive fallback)
+    # 從分支名自動決定要跑哪個 ResNet 架構
+    - name: Extract architecture from branch name
+      id: extract_arch
+      run: |
+        BR="${{ matrix.branch }}"
+        if [[ "$BR" == *"resnet18"* ]]; then
+          ARCH="resnet18"
+        elif [[ "$BR" == *"resnet34"* ]]; then
+          ARCH="resnet34"
+        elif [[ "$BR" == *"resnet50"* ]]; then
+          ARCH="resnet50"
+        elif [[ "$BR" == *"resnet101"* ]]; then
+          ARCH="resnet101"
+        else
+          ARCH="resnet18"  # fallback
+        fi
+        echo "arch=$ARCH" >> $GITHUB_OUTPUT
+        echo "Detected architecture: $ARCH"
+
+    # 下載資料集（你原本的 GDrive 版本）
+    - name: Download dataset (GDrive)
       run: |
         echo "從 Google Drive 下載數據集..."
         gdown https://drive.google.com/uc?id=19QvyV00Zq6dwRY3hA8z_PyHB-naUUMB7 -O dataset.zip
@@ -79,7 +118,7 @@ jobs:
         echo "開始訓練模型..."
         python train_model.py \
           --data-dir file/kaggle_cats_vs_dogs_f \
-          --architecture resnet18 \
+          --architecture ${{ steps.extract_arch.outputs.arch }} \
           --max-epochs 500 \
           --save-every 5 \
           --max-wall-min 330 \
@@ -88,9 +127,7 @@ jobs:
     - name: Upload checkpoint for next run
       uses: actions/upload-artifact@v4
       with:
-        ################################################################
-        name: ckpt_resnet18_no_pre_2                  # 與下載步驟同名 → 方便續跑
-        ################################################################
+        name: ${{ env.CKPT_NAME }}    # 每個分支都有獨立的 artifact 名稱
         path: |
           checkpoint_latest.pth
           checkpoint_epoch*.pth
@@ -122,7 +159,7 @@ jobs:
       if: ${{ hashFiles('best_cat_dog_model.pth') != '' }}
       uses: actions/upload-artifact@v4
       with:
-        name: trained-cat-dog-model-resnet18-no-pre
+        name: trained-cat-dog-model-${{ steps.names.outputs.safe }}
         path: |
           best_cat_dog_model.pth
           overfit_training_curves.png
