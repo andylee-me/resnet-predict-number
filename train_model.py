@@ -71,13 +71,13 @@ class OverfitTrainer:
     def build_model(self, architecture='resnet101', lr=1e-5, weight_decay=0.0):
         print(f"🏗️ 正在構建模型: {architecture} (pretrained=False)")
         if architecture == 'resnet50':
-            self.model = models.resnet50(pretrained=False)
+            self.model = models.resnet50(pretrained=True)
         elif architecture == 'resnet101':
-            self.model = models.resnet101(pretrained=False)
+            self.model = models.resnet101(pretrained=True)
         elif architecture == 'resnet18':
-            self.model = models.resnet18(pretrained=False)
+            self.model = models.resnet18(pretrained=True)
         else:
-            self.model = models.resnet34(pretrained=False)
+            self.model = models.resnet34(pretrained=True)
         num_ftrs = self.model.fc.in_features
         self.model.fc = nn.Linear(num_ftrs, 2)
         for p in self.model.parameters(): p.requires_grad = True
