@@ -23,7 +23,7 @@ jobs:
         branch:
         - claude-resnet50-pre
         - claude-resnet50-no-pre-test
-        - claude-resnet101-pre
+        - claude-resnet101-pre2
         - claude-resnet101-no-pre-test
 
     steps:
