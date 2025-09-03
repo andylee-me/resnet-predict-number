@@ -49,9 +49,46 @@ class OverfitTrainer:
         self.dataset_sizes = {}
         self.class_names = []
         
+
+
     def load_data(self):
         """加載數據"""
         print("📂 正在加載數據...")
+    
+        # --- 新增：如果 data_dir 裡是 SVHN 的 .mat 檔，直接用 torchvision.SVHN ---
+        mat_train = os.path.join(self.data_dir, 'train_32x32.mat')
+        mat_test  = os.path.join(self.data_dir, 'test_32x32.mat')
+        if os.path.isfile(mat_train) and os.path.isfile(mat_test):
+            print("🔎 偵測到 SVHN .mat 檔，使用 torchvision.SVHN 載入（不用 ImageFolder）")
+    
+            def fix_zero(y: int):
+                # SVHN 用 10 代表數字 0
+                y = int(y)
+                return 0 if y == 10 else y
+    
+            train_set = datasets.SVHN(
+                root=self.data_dir, split="train", download=False,
+                transform=self.data_transforms["train"],
+                target_transform=fix_zero
+            )
+            val_set = datasets.SVHN(
+                root=self.data_dir, split="test", download=False,
+                transform=self.data_transforms["val"],
+                target_transform=fix_zero
+            )
+    
+            self.dataloaders = {
+                "train": DataLoader(train_set, batch_size=8, shuffle=True,  num_workers=4),
+                "val":   DataLoader(val_set,   batch_size=8, shuffle=False, num_workers=4),
+            }
+            self.dataset_sizes = {k: len(v.dataset) for k, v in self.dataloaders.items()}
+            self.class_names = [str(i) for i in range(10)]
+            self.num_classes = 10
+    
+            print(f"✅ (SVHN) 訓練集大小: {self.dataset_sizes['train']}")
+            print(f"✅ (SVHN) 驗證集大小: {self.dataset_sizes['val']}")
+            print(f"✅ 類別: {self.class_names}")
+            return
         
         image_datasets = {x: datasets.ImageFolder(os.path.join(self.data_dir, x),
                                                 self.data_transforms[x])
@@ -64,6 +101,7 @@ class OverfitTrainer:
         
         self.dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val']}
         self.class_names = image_datasets['train'].classes
+        self.num_classes = len(self.class_names)
         
         print(f"✅ 訓練集大小: {self.dataset_sizes['train']}")
         print(f"✅ 驗證集大小: {self.dataset_sizes['val']}")
@@ -259,7 +297,7 @@ class OverfitTrainer:
 
 def main():
     parser = argparse.ArgumentParser(description='訓練100%準確率的貓狗分類器')
-    parser.add_argument('--data-dir', type=str, default='file/kaggle_cats_vs_dogs_f',
+    parser.add_argument('--data-dir', type=str, default='file/num-data',
                        help='數據集路徑')
     parser.add_argument('--architecture', type=str, default='resnet50',
                        choices=['resnet18', 'resnet34', 'resnet50', 'resnet101'],
