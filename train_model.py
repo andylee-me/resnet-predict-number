@@ -11,10 +11,16 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms, models
 import argparse, os, time, copy, matplotlib.pyplot as plt, numpy as np
 
+
+
+
+
 class OverfitTrainer:
-    def __init__(self, data_dir, target_accuracy=1.0):
+    def __init__(self, data_dir, target_accuracy=1.0, dataset="imagefolder"):
         self.data_dir = data_dir
         self.target_accuracy = target_accuracy
+        self.dataset = dataset
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         if torch.cuda.is_available():
             self.device = torch.device("cuda")
         elif torch.backends.mps.is_available():
@@ -48,36 +54,87 @@ class OverfitTrainer:
         self.criterion = nn.CrossEntropyLoss()
         self.dataloaders, self.dataset_sizes, self.class_names = {}, {}, []
 
-    def load_data(self, batch_size=8, num_workers=4):
+
+
+
+
+
+
+    def load_data(self):
         print("📂 正在加載數據...")
-        image_datasets = {
-            x: datasets.ImageFolder(os.path.join(self.data_dir, x), self.data_transforms[x])
-            for x in ['train', 'val']
-        }
-        self.dataloaders = {
-            'train': DataLoader(image_datasets['train'], batch_size=batch_size, shuffle=True,
-                                num_workers=num_workers, pin_memory=(self.device.type=="cuda"),
-                                persistent_workers=(num_workers>0)),
-            'val': DataLoader(image_datasets['val'], batch_size=batch_size, shuffle=False,
-                              num_workers=num_workers, pin_memory=(self.device.type=="cuda"),
-                              persistent_workers=(num_workers>0))
-        }
+    
+        if self.dataset.lower() == "svhn":
+            # ---- SVHN 路徑不用 data_dir；torchvision 會自動下載到 ./data ----
+            def fix_zero(y):
+                # SVHN 用 10 代表數字 0
+                return 0 if int(y) == 10 else int(y)
+    
+            import functools
+            target_tf = functools.partial(fix_zero)
+    
+            # train / test；這裡用 test 當作 val，維持你原有的 train/val 雙階段
+            train_set = datasets.SVHN(
+                root="./data", split="train", download=True,
+                transform=self.data_transforms["train"],
+                target_transform=target_tf
+            )
+            val_set = datasets.SVHN(
+                root="./data", split="test", download=True,
+                transform=self.data_transforms["val"],
+                target_transform=target_tf
+            )
+    
+            self.dataloaders = {
+                "train": DataLoader(train_set, batch_size=8, shuffle=True, num_workers=4),
+                "val":   DataLoader(val_set,   batch_size=8, shuffle=False, num_workers=4),
+            }
+            self.dataset_sizes = {x: len(self.dataloaders[x].dataset) for x in ["train", "val"]}
+            self.class_names = [str(i) for i in range(10)]
+            self.num_classes = 10
+            print(f"✅ (SVHN) 訓練集大小: {self.dataset_sizes['train']}")
+            print(f"✅ (SVHN) 驗證集大小: {self.dataset_sizes['val']}")
+            print(f"✅ 類別: {self.class_names}")
+            return
+    
+        # ---- 原本的 ImageFolder 分支：完全不動 ----
+        image_datasets = {x: datasets.ImageFolder(os.path.join(self.data_dir, x),
+                                                  self.data_transforms[x])
+                          for x in ['train', 'val']}
+        self.dataloaders = {x: DataLoader(image_datasets[x], batch_size=8,
+                                          shuffle=(x == 'train'), num_workers=4)
+                            for x in ['train', 'val']}
         self.dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val']}
         self.class_names = image_datasets['train'].classes
+        self.num_classes = len(self.class_names)  # <--- 新增：自動對齊類別數
         print(f"✅ 訓練集大小: {self.dataset_sizes['train']}")
         print(f"✅ 驗證集大小: {self.dataset_sizes['val']}")
         print(f"✅ 類別: {self.class_names}")
+
+
+
+
+
+
+
 
     def build_model(self, architecture='resnet50', lr=1e-5, weight_decay=0.0):
         print(f"🏗️ 正在構建模型: {architecture} (pretrained=False)")
         if architecture == 'resnet50':
             self.model = models.resnet50(pretrained=True)
+            num_ftrs = self.model.fc.in_features
+            self.model.fc = nn.Linear(num_ftrs, self.num_classes)  # <---
         elif architecture == 'resnet101':
             self.model = models.resnet101(pretrained=True)
+            num_ftrs = self.model.fc.in_features
+            self.model.fc = nn.Linear(num_ftrs, self.num_classes)  # <---
         elif architecture == 'resnet18':
             self.model = models.resnet18(pretrained=True)
+            num_ftrs = self.model.fc.in_features
+            self.model.fc = nn.Linear(num_ftrs, self.num_classes)  # <---
         else:
             self.model = models.resnet34(pretrained=True)
+            num_ftrs = self.model.fc.in_features
+            self.model.fc = nn.Linear(num_ftrs, self.num_classes)  # <---
         num_ftrs = self.model.fc.in_features
         self.model.fc = nn.Linear(num_ftrs, 2)
         for p in self.model.parameters(): p.requires_grad = True
@@ -209,7 +266,7 @@ class OverfitTrainer:
         plt.tight_layout(); plt.savefig('overfit_training_curves.png', dpi=300, bbox_inches='tight')
         print("✅ 訓練曲線已保存: overfit_training_curves.png")
 
-    def save_model(self, filepath='best_cat_dog_model.pth'):
+    def save_model(self, filepath='number_model.pth'):
         torch.save({
             'model_state_dict': self.model.state_dict(),
             'class_names': self.class_names,
@@ -220,7 +277,7 @@ class OverfitTrainer:
         print(f"🎯 模型已保存: {filepath}")
 
 def main():
-    parser = argparse.ArgumentParser(description='分段續訓的貓狗分類器')
+    parser = argparse.ArgumentParser(description='分段續訓的數字分類器')
     parser.add_argument('--data-dir', type=str, default='file/kaggle_cats_vs_dogs_f')
     parser.add_argument('--architecture', type=str, default='resnet50',
                         choices=['resnet18','resnet34','resnet50','resnet101'])
@@ -252,7 +309,7 @@ def main():
                                 max_wall_min=args.max_wall_min)
     # 只有真正跑完這輪才存最終模型；若提前退出將以 checkpoint 接續
     if os.path.exists('TRAINING_COMPLETE.txt'):
-        trainer.save_model('best_cat_dog_model.pth')
+        trainer.save_model('number_model.pth')
         print("\n🎉 訓練完成！你可以執行：python predict.py --model best_cat_dog_model.pth --evaluate-all")
 
 main()
