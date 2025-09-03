@@ -112,17 +112,19 @@ jobs:
         ls -la file/kaggle_cats_vs_dogs_f/ || true
         ls -la file/kaggle_cats_vs_dogs_f/train/ || true
         ls -la file/kaggle_cats_vs_dogs_f/val/ || true
-
+    
     - name: Train model (auto-stop before 6h)
       run: |
-        echo "開始訓練模型..."
+        echo "開始訓練模型（SVHN）..."
         python train_model.py \
           --data-dir file/kaggle_cats_vs_dogs_f \
+          --dataset svhn \
           --architecture ${{ steps.extract_arch.outputs.arch }} \
           --max-epochs 500 \
           --save-every 5 \
           --max-wall-min 330 \
           ${{ steps.resume.outputs.resume }}
+
 
     - name: Upload checkpoint for next run
       uses: actions/upload-artifact@v4
