@@ -278,7 +278,10 @@ class OverfitTrainer:
 
 def main():
     parser = argparse.ArgumentParser(description='分段續訓的數字分類器')
-    parser.add_argument('--data-dir', type=str, default='file/kaggle_cats_vs_dogs_f')
+    parser.add_argument('--data-dir', type=str, default='file/kaggle_cats_vs_dogs_f',help='數據集路徑（imagefolder 模式用）')
+    parser.add_argument('--dataset', type=str, default='imagefolder',
+                       choices=['imagefolder', 'svhn'],
+                       help='選擇資料來源：imagefolder 或 svhn')
     parser.add_argument('--architecture', type=str, default='resnet50',
                         choices=['resnet18','resnet34','resnet50','resnet101'])
     parser.add_argument('--target-accuracy', type=float, default=1.0)
@@ -300,7 +303,7 @@ def main():
 
     print("🎯 100% 訓練準確率專用訓練器")
     print("=" * 50)
-    trainer = OverfitTrainer(args.data_dir, args.target_accuracy)
+    trainer = OverfitTrainer(args.data_dir, args.target_accuracy, dataset=args.dataset)
     trainer.load_data(batch_size=args.batch_size, num_workers=args.num_workers)
     trainer.build_model(args.architecture, lr=args.lr, weight_decay=args.weight_decay)
     trainer.train_to_perfection(max_epochs=args.max_epochs,
@@ -310,6 +313,6 @@ def main():
     # 只有真正跑完這輪才存最終模型；若提前退出將以 checkpoint 接續
     if os.path.exists('TRAINING_COMPLETE.txt'):
         trainer.save_model('number_model.pth')
-        print("\n🎉 訓練完成！你可以執行：python predict.py --model best_cat_dog_model.pth --evaluate-all")
+        print("\n🎉 訓練完成！你可以執行：python predict.py --model number_model.pth --evaluate-all")
 
 main()
