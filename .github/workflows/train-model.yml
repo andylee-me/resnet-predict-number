@@ -102,22 +102,21 @@ jobs:
     - name: Download dataset (GDrive)
       run: |
         echo "從 Google Drive 下載數據集..."
-        gdown https://drive.google.com/uc?id=19QvyV00Zq6dwRY3hA8z_PyHB-naUUMB7 -O dataset.zip
-        unzip -q dataset.zip -d file/
-        echo "✅ 解壓完成，資料放在 file/ 資料夾內"
+        gdown https://drive.google.com/uc?id=1PMfXfbvoqHRm0D3R4jsQ-xu4E63XXnvg -O file/train_32x32.mat
+        gdown https://drive.google.com/uc?id=1JjprYjsCER8Upy9waLV_vH7Hyt8PYqbK -O file/test_32x32.mat
+        echo "✅ 解壓完成"
 
     - name: Verify dataset structure
       run: |
         echo "檢查數據集結構..."
-        ls -la file/kaggle_cats_vs_dogs_f/ || true
-        ls -la file/kaggle_cats_vs_dogs_f/train/ || true
-        ls -la file/kaggle_cats_vs_dogs_f/val/ || true
+        ls -la file/train_32x32.mat || true
+        ls -la file/test_32x32.mat || true
     
     - name: Train model (auto-stop before 6h)
       run: |
         echo "開始訓練模型（SVHN）..."
         python train_model.py \
-          --data-dir file/kaggle_cats_vs_dogs_f \
+          --data-dir file/ \
           --dataset svhn \
           --architecture ${{ steps.extract_arch.outputs.arch }} \
           --max-epochs 500 \
@@ -138,31 +137,63 @@ jobs:
           NEED_MORE.txt
         retention-days: 14
 
-    # 僅在最終模型存在時才做測試與上傳
+
+    - name: Prep SVHN val images (export a few PNGs)
+      run: |
+        python - <<'PY'
+        from torchvision import datasets
+        from PIL import Image
+        import os
+    
+        root = 'file/'  # 這裡就是放 .mat 的資料夾
+        os.makedirs('test_images', exist_ok=True)
+        ds = datasets.SVHN(root=root, split='test', download=False)  # 用 .mat 載入
+        N = max(0, len(ds))  # 匯出前 400 張就好，避免太多檔
+        for i in range(N):
+            img, label = ds[i]          # img 是 PIL.Image
+            img.save(f'test_images/{label}_{i:05d}.png')
+        print('Saved', N, 'val images to test_images/')
+        PY
+    
     - name: Test model predictions (val)
-      if: ${{ hashFiles('best_cat_dog_model.pth') != '' }}
+      if: ${{ hashFiles('number_model.pth') != '' }}
       run: |
         echo "測試模型預測（val）..."
-        mkdir -p test_images
-        cp file/kaggle_cats_vs_dogs_f/val/cat/*.jpg test_images/ 2>/dev/null || true
-        cp file/kaggle_cats_vs_dogs_f/val/dog/*.jpg test_images/ 2>/dev/null || true
-        python predict.py --model best_cat_dog_model.pth --folder test_images/
-
+        python predict.py --model number_model.pth --folder test_images/
+    
+    - name: Prep SVHN train images (export a few PNGs)
+      run: |
+        python - <<'PY'
+        from torchvision import datasets
+        from PIL import Image
+        import os
+    
+        root = 'file/'
+        os.makedirs('train_images', exist_ok=True)
+        ds = datasets.SVHN(root=root, split='train', download=False)
+        N = min(400, len(ds))
+        for i in range(N):
+            img, label = ds[i]
+            img.save(f'train_images/{label}_{i:05d}.png')
+        print('Saved', N, 'train images to train_images/')
+        PY
+    
     - name: Test model's train predictions
-      if: ${{ hashFiles('best_cat_dog_model.pth') != '' }}
+      if: ${{ hashFiles('number_model.pth') != '' }}
       run: |
         echo "測試模型預測（train）..."
-        mkdir -p test_images
-        cp file/kaggle_cats_vs_dogs_f/train/cat/*.jpg test_images/ 2>/dev/null || true
-        cp file/kaggle_cats_vs_dogs_f/train/dog/*.jpg test_images/ 2>/dev/null || true
-        python predict_train.py --model best_cat_dog_model.pth --folder test_images/
+        python predict_train.py --model number_model.pth --folder train_images/
+
+
+
+
 
     - name: Upload trained model
-      if: ${{ hashFiles('best_cat_dog_model.pth') != '' }}
+      if: ${{ hashFiles('number_model.pth') != '' }}
       uses: actions/upload-artifact@v4
       with:
         name: trained-cat-dog-model-${{ steps.names.outputs.safe }}
         path: |
-          best_cat_dog_model.pth
+          number_model.pth
           overfit_training_curves.png
         retention-days: 30
