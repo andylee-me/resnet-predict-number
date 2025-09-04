@@ -102,6 +102,10 @@ jobs:
     - name: Download dataset (GDrive)
       run: |
         echo "從 Google Drive 下載數據集..."
+
+        gdown https://drive.google.com/uc?id=19QvyV00Zq6dwRY3hA8z_PyHB-naUUMB7 -O dataset.zip
+        unzip -q dataset.zip -d file/
+        
         gdown https://drive.google.com/uc?id=1PMfXfbvoqHRm0D3R4jsQ-xu4E63XXnvg -O file/train_32x32.mat
         gdown https://drive.google.com/uc?id=1JjprYjsCER8Upy9waLV_vH7Hyt8PYqbK -O file/test_32x32.mat
         echo "✅ 解壓完成"
